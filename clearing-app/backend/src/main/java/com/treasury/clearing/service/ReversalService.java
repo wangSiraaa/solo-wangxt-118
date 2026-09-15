@@ -16,6 +16,7 @@ import com.treasury.clearing.domain.ReversalRequest;
 import com.treasury.clearing.domain.ReversalStatus;
 import com.treasury.clearing.domain.RoundingLine;
 import com.treasury.clearing.repo.ClearingBatchRepository;
+import com.treasury.clearing.repo.AdjustmentRequestRepository;
 import com.treasury.clearing.repo.NettingAgreementRepository;
 import com.treasury.clearing.repo.ReceivableRepository;
 import com.treasury.clearing.repo.ReversalDecisionRepository;
@@ -60,17 +61,24 @@ public class ReversalService {
     private final ReversalDecisionRepository decisionRepo;
     private final ReceivableRepository receivableRepo;
     private final NettingAgreementRepository agreementRepo;
+    private final AdjustmentRequestRepository adjustmentRequestRepo;
 
     public ReversalService(ClearingBatchRepository batchRepo,
                            ReversalRequestRepository requestRepo,
                            ReversalDecisionRepository decisionRepo,
                            ReceivableRepository receivableRepo,
-                           NettingAgreementRepository agreementRepo) {
+                           NettingAgreementRepository agreementRepo,
+                           AdjustmentRequestRepository adjustmentRequestRepo) {
         this.batchRepo = batchRepo;
         this.requestRepo = requestRepo;
         this.decisionRepo = decisionRepo;
         this.receivableRepo = receivableRepo;
         this.agreementRepo = agreementRepo;
+        this.adjustmentRequestRepo = adjustmentRequestRepo;
+    }
+
+    private boolean adjustmentRequestExists(String batchId) {
+        return adjustmentRequestRepo.findByOriginalBatchId(batchId).isPresent();
     }
 
     /** 发起撤销申请：仅 CONFIRMED 的普通批次；按协议门槛快照一审/双审名额。 */
@@ -80,14 +88,21 @@ public class ReversalService {
         ClearingBatch batch = batchRepo.findByIdForUpdate(batchId)
                 .orElseThrow(() -> new NoSuchElementException("批次不存在: " + batchId));
 
-        if (batch.getKind() == BatchKind.REVERSAL) {
-            throw new ConflictException("冲正批次本身不可再撤销: " + batchId);
+        if (batch.getKind() == BatchKind.REVERSAL || batch.getKind() == BatchKind.ADJUSTMENT) {
+            throw new ConflictException(batch.getKind() + " 批次不可再撤销: " + batchId);
         }
         switch (batch.getStatus()) {
             case REVERSAL_PENDING -> throw new ConflictException("该批次已有进行中的撤销申请，请勿重复提交: " + batchId);
+            case ADJUSTMENT_PENDING -> throw new ConflictException("该批次差额更正进行中，撤销与更正互斥: " + batchId);
             case REVERSED -> throw new ConflictException("该批次已冲正（终态），不能再次撤销: " + batchId);
             case SIMULATED -> throw new ConflictException("试算批次无需撤销，可直接重新试算: " + batchId);
             case CONFIRMED -> { /* 允许 */ }
+        }
+        if (batch.getAdjustmentBatchId() != null) {
+            throw new ConflictException("该批次已完成差额更正，不能整单撤销（更正与撤销互斥）: " + batchId);
+        }
+        if (adjustmentRequestExists(batchId)) {
+            throw new ConflictException("该批次存在差额更正申请，撤销与更正互斥: " + batchId);
         }
         if (requestRepo.existsByOriginalBatchId(batchId)) {
             throw new ConflictException("该批次已存在撤销申请，请勿重复提交: " + batchId);

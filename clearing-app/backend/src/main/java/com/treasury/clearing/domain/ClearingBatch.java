@@ -53,6 +53,14 @@ public class ClearingBatch {
     @Column(name = "reversal_batch_id", length = 40)
     private String reversalBatchId;
 
+    /** 差额批次：指向被更正的原确认批次；其余为 null。 */
+    @Column(name = "adjusts_batch_id", length = 40)
+    private String adjustsBatchId;
+
+    /** 原确认批次：指向其差额更正批次；未更正为 null。 */
+    @Column(name = "adjustment_batch_id", length = 40)
+    private String adjustmentBatchId;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -122,6 +130,19 @@ public class ClearingBatch {
         return b;
     }
 
+    /** 差额更正批次专用构造（kind=ADJUSTMENT，CONFIRMED 即生效，沿用原估值时点；不改原债权）。 */
+    public static ClearingBatch adjustment(String id, String label, Instant createdAt,
+                                           Instant valuationTime, int affectedClaimCount,
+                                           int resultingEntryCount, String createdBy,
+                                           String adjustsBatchId) {
+        ClearingBatch b = new ClearingBatch(id, label, BatchStatus.CONFIRMED, createdAt,
+                valuationTime, affectedClaimCount, resultingEntryCount, 0, createdBy);
+        b.kind = BatchKind.ADJUSTMENT;
+        b.confirmedAt = createdAt;
+        b.adjustsBatchId = adjustsBatchId;
+        return b;
+    }
+
     public String getId() {
         return id;
     }
@@ -148,6 +169,18 @@ public class ClearingBatch {
 
     public String getReversalBatchId() {
         return reversalBatchId;
+    }
+
+    public String getAdjustsBatchId() {
+        return adjustsBatchId;
+    }
+
+    public String getAdjustmentBatchId() {
+        return adjustmentBatchId;
+    }
+
+    public void setAdjustmentBatchId(String adjustmentBatchId) {
+        this.adjustmentBatchId = adjustmentBatchId;
     }
 
     public Instant getCreatedAt() {
@@ -204,11 +237,48 @@ public class ClearingBatch {
         if (this.status != BatchStatus.CONFIRMED) {
             throw new ConflictException("只有 CONFIRMED 批次可申请撤销，当前状态: " + this.status);
         }
-        if (this.kind == BatchKind.REVERSAL) {
-            throw new ConflictException("冲正批次不可再撤销");
+        if (this.kind == BatchKind.REVERSAL || this.kind == BatchKind.ADJUSTMENT) {
+            throw new ConflictException(this.kind + " 批次不可再撤销");
         }
         this.status = BatchStatus.REVERSAL_PENDING;
         this.reversalRequestedAt = at;
+    }
+
+    /** 差额更正进行中：仅允许未进入撤销流程、且尚未更正的 CONFIRMED 普通批次。 */
+    public void markAdjustmentPending(Instant at) {
+        if (this.kind != BatchKind.NETTING) {
+            throw new ConflictException("只有普通清算批次可发起差额更正");
+        }
+        if (this.status == BatchStatus.REVERSAL_PENDING) {
+            throw new ConflictException("批次撤销流程进行中，不能发起差额更正");
+        }
+        if (this.status == BatchStatus.REVERSED) {
+            throw new ConflictException("批次已冲正，不能再差额更正");
+        }
+        if (this.status != BatchStatus.CONFIRMED) {
+            throw new ConflictException("只有 CONFIRMED 批次可发起差额更正，当前状态: " + this.status);
+        }
+        if (this.adjustmentBatchId != null) {
+            throw new ConflictException("该批次已有差额更正批次，不能重复更正");
+        }
+        this.status = BatchStatus.ADJUSTMENT_PENDING;
+    }
+
+    /** 更正被驳回/失败：回到 CONFIRMED。 */
+    public void markAdjustmentRejected() {
+        if (this.status != BatchStatus.ADJUSTMENT_PENDING) {
+            throw new ConflictException("只有 ADJUSTMENT_PENDING 批次可回到 CONFIRMED，当前状态: " + this.status);
+        }
+        this.status = BatchStatus.CONFIRMED;
+    }
+
+    /** 更正完成：原批次仍保持 CONFIRMED（不冲正），仅登记差额批次关联。 */
+    public void markAdjusted(String adjustmentBatchId) {
+        if (this.status != BatchStatus.ADJUSTMENT_PENDING) {
+            throw new ConflictException("只有 ADJUSTMENT_PENDING 批次可完成更正，当前状态: " + this.status);
+        }
+        this.adjustmentBatchId = adjustmentBatchId;
+        this.status = BatchStatus.CONFIRMED;
     }
 
     /** 审批驳回：回到 CONFIRMED。 */

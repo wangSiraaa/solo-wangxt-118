@@ -1,5 +1,5 @@
-export type BatchStatus = 'SIMULATED' | 'CONFIRMED' | 'REVERSAL_PENDING' | 'REVERSED';
-export type BatchKind = 'NETTING' | 'REVERSAL';
+export type BatchStatus = 'SIMULATED' | 'CONFIRMED' | 'REVERSAL_PENDING' | 'REVERSED' | 'ADJUSTMENT_PENDING';
+export type BatchKind = 'NETTING' | 'REVERSAL' | 'ADJUSTMENT';
 export type ReversalStatus = 'REQUESTED' | 'PARTIALLY_APPROVED' | 'PROCESSED' | 'REJECTED';
 export type DecisionOutcome = 'APPROVE' | 'REJECT';
 
@@ -11,6 +11,8 @@ export interface BatchSummary {
   kind: BatchKind;
   reversesBatchId: string | null;
   reversalBatchId: string | null;
+  adjustsBatchId: string | null;
+  adjustmentBatchId: string | null;
   createdAt: string;
   confirmedAt: string | null;
   originalClaimCount: number;
@@ -119,6 +121,7 @@ export interface BatchView extends BatchSummary {
   reversedAt: string | null;
   reversalRequestedAt: string | null;
   reversal: ReversalView | null;
+  adjustment: AdjustmentView | null;
   groups: GroupView[];
   excluded: ExcludedView[];
 }
@@ -153,4 +156,72 @@ export interface FxRateView {
   rate: number;
   rateTime: string;
   source: string;
+}
+
+export type AdjustmentStatus = 'REQUESTED' | 'PARTIALLY_APPROVED' | 'PROCESSED' | 'REJECTED';
+
+export interface InvoiceCorrectionEventView {
+  id: string;
+  seq: number;
+  receivableId: string;
+  invoiceNo: string;
+  correctedField: 'AMOUNT' | 'AGREEMENT';
+  oldAmount: number;
+  oldCurrency: string;
+  oldAgreementCode: string | null;
+  newAmount: number;
+  newCurrency: string;
+  newAgreementCode: string | null;
+  oldConverted: number;
+  newConverted: number;
+  deltaConverted: number;
+  clearingCurrency: string;
+  effectiveScope: string | null;
+  reason: string | null;
+  requestedBy: string | null;
+  createdAt: string;
+}
+
+export interface AdjustmentDecisionView {
+  id: string;
+  seq: number;
+  outcome: DecisionOutcome;
+  approver: string;
+  comment: string | null;
+  decidedAt: string;
+  statusBefore: AdjustmentStatus;
+  statusAfter: AdjustmentStatus;
+  adjustmentBatchId: string | null;
+}
+
+export interface AdjustmentView {
+  id: string;
+  originalBatchId: string;
+  adjustmentBatchId: string | null;
+  status: AdjustmentStatus;
+  requiredApprovals: number;
+  approvalsReceived: number;
+  thresholdAgreement: string | null;
+  thresholdAmount: string | null;
+  deltaGrossAmount: string | null;
+  deltaGrossCurrency: string | null;
+  reason: string | null;
+  requestedBy: string | null;
+  requestedAt: string;
+  finalizedBy: string | null;
+  processedAt: string | null;
+  eventCount: number | null;
+  rejectedBy: string | null;
+  rejectedAt: string | null;
+  rejectReason: string | null;
+  events: InvoiceCorrectionEventView[];
+  decisions: AdjustmentDecisionView[];
+}
+
+export interface AdjustmentSpec {
+  receivableId: string;
+  newAmount: number | null;
+  newAgreementCode: string | null;
+  reason: string | null;
+  effectiveScope: string | null;
 }

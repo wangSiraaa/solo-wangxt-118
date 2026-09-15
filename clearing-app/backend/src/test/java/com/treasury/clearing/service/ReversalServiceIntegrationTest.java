@@ -49,12 +49,18 @@ class ReversalServiceIntegrationTest {
     @Autowired private NettingAgreementRepository agreementRepo;
     @Autowired private AgreementPartyRepository partyRepo;
     @Autowired private BatchViewMapper viewMapper;
+    @Autowired private com.treasury.clearing.repo.InvoiceCorrectionEventRepository eventRepo;
+    @Autowired private com.treasury.clearing.repo.AdjustmentDecisionRepository adjDecRepo;
+    @Autowired private com.treasury.clearing.repo.AdjustmentRequestRepository adjReqRepo;
 
     private LocalDate d;
 
     @BeforeEach
     void setUp() {
         excludedRepo.deleteAll();
+        eventRepo.deleteAll();
+        adjDecRepo.deleteAll();
+        adjReqRepo.deleteAll();
         decisionRepo.deleteAll();
         requestRepo.deleteAll();
         batchRepo.deleteAll();

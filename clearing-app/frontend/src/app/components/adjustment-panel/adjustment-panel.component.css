@@ -1,0 +1,24 @@
+.adjustment-panel { margin-top: 16px; }
+.stepper { display: flex; gap: 10px; list-style: none; padding: 0; margin: 8px 0 14px; }
+.stepper li {
+  flex: 1; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px;
+  padding: 8px 10px; color: var(--muted); font-size: 13px;
+}
+.stepper li.active { border-color: var(--amber); color: var(--amber); }
+.stepper li.done { border-color: var(--green); color: var(--green); }
+.stepper li.failed { border-color: var(--red); color: var(--red); }
+
+.adj-request label, .adj-decide label {
+  display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: 12px; margin-bottom: 8px; max-width: 420px;
+}
+.num-input { width: 140px; text-align: right; }
+table.cand td, table.events td, table.decision-chain td { vertical-align: middle; }
+table.events, table.decision-chain, table.cand { font-size: 12px; margin: 8px 0 14px; }
+
+.adj-banner { border-radius: 8px; padding: 10px 12px; margin: 8px 0; font-size: 13px; border: 1px solid var(--line); }
+.adj-banner.pending { background: #4a3a16; border-color: var(--amber); color: #fde68a; }
+.adj-banner.done { background: #14432f; border-color: var(--green); color: #a7f3d0; }
+.adj-banner.rejected { background: #4c2626; border-color: var(--red); color: #fecaca; }
+.adj-banner.adj-batch { background: var(--panel-2); color: var(--violet); border-color: var(--violet); }
+.rev-actions { display: flex; gap: 8px; }
+.link { color: var(--accent); cursor: pointer; text-decoration: underline; }

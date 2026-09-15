@@ -1,7 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
-import { BatchSummary, BatchView, FxRateView, ReceivableView, ReferenceData, ReversalView } from '../models/models';
+import { BatchSummary, BatchView, FxRateView, ReceivableView, ReferenceData, ReversalView, AdjustmentSpec, AdjustmentView } from '../models/models';
 
 @Injectable({ providedIn: 'root' })
 export class ClearingApi {
@@ -52,5 +52,17 @@ export class ClearingApi {
 
   reference(): Observable<ReferenceData> {
     return this.http.get<ReferenceData>('/api/reference');
+  }
+
+  requestAdjustment(id: string, reason: string, requestedBy: string,
+                    corrections: AdjustmentSpec[]): Observable<AdjustmentView> {
+    return this.http.post<AdjustmentView>(`/api/batches/${id}/adjustment-request`,
+      { reason, requestedBy, corrections });
+  }
+
+  submitAdjustmentDecision(id: string, approver: string, comment: string,
+                           outcome: 'APPROVE' | 'REJECT'): Observable<BatchView> {
+    return this.http.post<BatchView>(`/api/batches/${id}/adjustment/decision`,
+      { approver, comment, outcome });
   }
 }

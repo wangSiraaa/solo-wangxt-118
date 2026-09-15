@@ -4,11 +4,13 @@ import { FormsModule } from '@angular/forms';
 import { BatchView, DischargeView } from '../../models/models';
 import { DebtGraphComponent } from '../debt-graph/debt-graph.component';
 import { ReversalPanelComponent } from '../reversal-panel/reversal-panel.component';
+import { AdjustmentPanelComponent } from '../adjustment-panel/adjustment-panel.component';
 
 @Component({
   selector: 'app-batch-detail',
   standalone: true,
-  imports: [CommonModule, FormsModule, DebtGraphComponent, ReversalPanelComponent],
+  imports: [CommonModule, FormsModule, DebtGraphComponent, ReversalPanelComponent,
+    AdjustmentPanelComponent],
   templateUrl: './batch-detail.component.html'
 })
 export class BatchDetailComponent {
@@ -17,6 +19,15 @@ export class BatchDetailComponent {
   @Output() confirmed = new EventEmitter<string>();
   @Output() reversalRequested = new EventEmitter<{ reason: string; by: string }>();
   @Output() reversalDecision = new EventEmitter<
+    { approver: string; comment: string; outcome: 'APPROVE' | 'REJECT' }
+  >();
+  @Output() adjustmentRequested = new EventEmitter<{
+    reason: string; by: string; corrections: {
+      receivableId: string; newAmount: number | null; newAgreementCode: string | null;
+      reason: string | null; effectiveScope: string | null;
+    }[];
+  }>();
+  @Output() adjustmentDecision = new EventEmitter<
     { approver: string; comment: string; outcome: 'APPROVE' | 'REJECT' }
   >();
   @Output() openBatch = new EventEmitter<string>();
@@ -42,7 +53,8 @@ export class BatchDetailComponent {
       SIMULATED: '试算方案',
       CONFIRMED: '已确认',
       REVERSAL_PENDING: '撤销审批中',
-      REVERSED: '已冲正'
+      REVERSED: '已冲正',
+      ADJUSTMENT_PENDING: '差额更正审批中'
     } as Record<string, string>)[this.batch.status] ?? this.batch.status;
   }
 

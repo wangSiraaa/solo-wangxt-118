@@ -4,11 +4,12 @@
       <h2>{{ batch.label }}
         <span class="badge" [class.sim]="batch.status === 'SIMULATED'"
               [class.cfm]="batch.status === 'CONFIRMED'"
-              [class.pending]="batch.status === 'REVERSAL_PENDING'"
+              [class.pending]="batch.status === 'REVERSAL_PENDING' || batch.status === 'ADJUSTMENT_PENDING'"
               [class.reversed]="batch.status === 'REVERSED'">
           {{ statusText }}
         </span>
         <span class="badge setoff" *ngIf="batch.kind === 'REVERSAL'">冲正批次</span>
+        <span class="badge adj" *ngIf="batch.kind === 'ADJUSTMENT'">差额批次</span>
       </h2>
       <div class="muted small">{{ batch.id }} · 创建 {{ batch.createdAt }}
         · 估值时点 {{ batch.valuationTime }}
@@ -135,6 +136,14 @@
       </div>
     </div>
   </ng-container>
+
+  <!-- 差额更正面板：普通批次，非试算；与撤销互斥（撤销进行中则隐藏发起入口） -->
+  <app-adjustment-panel *ngIf="batch.kind === 'NETTING' && batch.status !== 'SIMULATED'
+        && batch.status !== 'REVERSAL_PENDING' && batch.status !== 'REVERSED' && !batch.reversal"
+    [batch]="batch" [busy]="busy"
+    (request)="adjustmentRequested.emit($event)"
+    (decision)="adjustmentDecision.emit($event)"
+    (openBatch)="openBatch.emit($event)"></app-adjustment-panel>
 
   <!-- 撤销与冲正：仅普通批次（含已确认/审批中/已冲正）展示 -->
   <app-reversal-panel *ngIf="batch.kind === 'NETTING' && batch.status !== 'SIMULATED'"

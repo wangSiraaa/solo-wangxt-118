@@ -14,9 +14,11 @@
     <tr class="clickable" *ngFor="let b of batches" (click)="open.emit(b.id)">
       <td><b>{{ b.label }}</b><div class="muted small">{{ b.id }}</div>
         <div class="small violet" *ngIf="b.kind === 'REVERSAL'">冲回 {{ b.reversesBatchId }}</div>
+        <div class="small amber" *ngIf="b.kind === 'ADJUSTMENT'">更正自 {{ b.adjustsBatchId }}</div>
         <div class="small green" *ngIf="b.reversalBatchId">已被 {{ b.reversalBatchId }} 冲正</div>
+        <div class="small amber" *ngIf="b.adjustmentBatchId">已由 {{ b.adjustmentBatchId }} 差额更正</div>
       </td>
-      <td>{{ b.kind === 'REVERSAL' ? '冲正' : '清算' }}</td>
+      <td>{{ b.kind === 'REVERSAL' ? '冲正' : b.kind === 'ADJUSTMENT' ? '差额' : '清算' }}</td>
       <td><span class="badge" [class.sim]="b.status === 'SIMULATED'"
                 [class.cfm]="b.status === 'CONFIRMED'"
                 [class.pending]="b.status === 'REVERSAL_PENDING'"

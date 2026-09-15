@@ -85,6 +85,37 @@ export class AppComponent implements OnInit {
     });
   }
 
+  requestAdjustment(payload: {
+    reason: string; by: string; corrections: import('./models/models').AdjustmentSpec[];
+  }): void {
+    const cur = this.selected();
+    if (!cur) { return; }
+    this.busy.set(true);
+    this.error.set(null);
+    this.api.requestAdjustment(cur.id, payload.reason, payload.by, payload.corrections).subscribe({
+      next: () => {
+        this.busy.set(false);
+        this.reload(cur.id);
+      },
+      error: e => this.fail(e, '差额更正申请失败')
+    });
+  }
+
+  submitAdjustmentDecision(payload: { approver: string; comment: string; outcome: 'APPROVE' | 'REJECT' }): void {
+    const cur = this.selected();
+    if (!cur) { return; }
+    this.busy.set(true);
+    this.error.set(null);
+    this.api.submitAdjustmentDecision(cur.id, payload.approver, payload.comment, payload.outcome).subscribe({
+      next: () => {
+        this.busy.set(false);
+        this.api.listBatches().subscribe(list => this.batches.set(list));
+        this.reload(cur.id);
+      },
+      error: e => this.fail(e, payload.outcome === 'APPROVE' ? '更正审批失败' : '更正驳回失败')
+    });
+  }
+
   submitReversalDecision(payload: { approver: string; comment: string; outcome: 'APPROVE' | 'REJECT' }): void {
     const cur = this.selected();
     if (!cur) { return; }

@@ -17,7 +17,8 @@ export class BatchListComponent {
       SIMULATED: '试算',
       CONFIRMED: '已确认',
       REVERSAL_PENDING: '撤销审批中',
-      REVERSED: '已冲正'
+      REVERSED: '已冲正',
+      ADJUSTMENT_PENDING: '差额更正审批中'
     } as Record<BatchStatus, string>)[s] ?? s;
   }
 }

@@ -1,12 +1,19 @@
 package com.treasury.clearing.service;
 
+import com.treasury.clearing.domain.AdjustmentDecision;
+import com.treasury.clearing.domain.AdjustmentRequest;
 import com.treasury.clearing.domain.ClearingBatch;
+import com.treasury.clearing.domain.InvoiceCorrectionEvent;
 import com.treasury.clearing.domain.ReversalDecision;
 import com.treasury.clearing.domain.ReversalRequest;
+import com.treasury.clearing.dto.AdjustmentView;
 import com.treasury.clearing.dto.BatchView;
 import com.treasury.clearing.dto.ReversalView;
+import com.treasury.clearing.repo.AdjustmentDecisionRepository;
+import com.treasury.clearing.repo.AdjustmentRequestRepository;
 import com.treasury.clearing.repo.ClearingBatchRepository;
 import com.treasury.clearing.repo.ExcludedClaimRepository;
+import com.treasury.clearing.repo.InvoiceCorrectionEventRepository;
 import com.treasury.clearing.repo.ReversalDecisionRepository;
 import com.treasury.clearing.repo.ReversalRequestRepository;
 import org.springframework.stereotype.Component;
@@ -24,15 +31,24 @@ public class BatchViewMapper {
     private final ReversalRequestRepository reversalRepo;
     private final ClearingBatchRepository batchRepo;
     private final ReversalDecisionRepository decisionRepo;
+    private final AdjustmentRequestRepository adjustmentRepo;
+    private final AdjustmentDecisionRepository adjustmentDecisionRepo;
+    private final InvoiceCorrectionEventRepository eventRepo;
 
     public BatchViewMapper(ExcludedClaimRepository excludedRepo,
                            ReversalRequestRepository reversalRepo,
                            ClearingBatchRepository batchRepo,
-                           ReversalDecisionRepository decisionRepo) {
+                           ReversalDecisionRepository decisionRepo,
+                           AdjustmentRequestRepository adjustmentRepo,
+                           AdjustmentDecisionRepository adjustmentDecisionRepo,
+                           InvoiceCorrectionEventRepository eventRepo) {
         this.excludedRepo = excludedRepo;
         this.reversalRepo = reversalRepo;
         this.batchRepo = batchRepo;
         this.decisionRepo = decisionRepo;
+        this.adjustmentRepo = adjustmentRepo;
+        this.adjustmentDecisionRepo = adjustmentDecisionRepo;
+        this.eventRepo = eventRepo;
     }
 
     /** 按 id 在事务内重新加载后装配，避免调用方传入脱管实体导致懒加载失败。 */
@@ -89,17 +105,20 @@ public class BatchViewMapper {
 
         ReversalView reversal = reversalRepo.findByOriginalBatchId(b.getId())
                 .map(this::toReversalView).orElse(null);
+        AdjustmentView adjustment = adjustmentRepo.findByOriginalBatchId(b.getId())
+                .map(this::toAdjustmentView).orElse(null);
 
         return new BatchView(b.getId(), b.getVersion(), b.getLabel(), b.getStatus().name(),
                 b.getKind().name(),
                 b.getReversesBatchId(), b.getReversalBatchId(),
+                b.getAdjustsBatchId(), b.getAdjustmentBatchId(),
                 b.getCreatedAt().toString(),
                 b.getValuationTime().toString(),
                 b.getConfirmedAt() != null ? b.getConfirmedAt().toString() : null,
                 b.getReversedAt() != null ? b.getReversedAt().toString() : null,
                 b.getReversalRequestedAt() != null ? b.getReversalRequestedAt().toString() : null,
                 b.getOriginalClaimCount(), b.getResultingEntryCount(), b.getExcludedCount(),
-                b.getCreatedBy(), reversal, groups, excluded);
+                b.getCreatedBy(), reversal, adjustment, groups, excluded);
     }
 
     private ReversalView toReversalView(ReversalRequest r) {
@@ -119,6 +138,37 @@ public class BatchViewMapper {
                 r.getReason(), r.getRequestedBy(), ts(r.getRequestedAt()),
                 r.getFinalizedBy(), ts(r.getProcessedAt()), r.getRestoredCount(),
                 r.getRejectedBy(), ts(r.getRejectedAt()), r.getRejectReason(), decisions);
+    }
+
+    private AdjustmentView toAdjustmentView(AdjustmentRequest r) {
+        List<AdjustmentView.EventView> events = eventRepo.listByRequest(r.getId()).stream()
+                .sorted(Comparator.comparingInt(InvoiceCorrectionEvent::getSeq))
+                .map(e -> new AdjustmentView.EventView(
+                        e.getId(), e.getSeq(), e.getReceivableId(), e.getInvoiceNo(),
+                        e.getCorrectedField().name(),
+                        e.getOldAmount(), e.getOldCurrency(), e.getOldAgreementCode(),
+                        e.getNewAmount(), e.getNewCurrency(), e.getNewAgreementCode(),
+                        e.getOldConverted(), e.getNewConverted(), e.getDeltaConverted(),
+                        e.getClearingCurrency(), e.getEffectiveScope(), e.getReason(),
+                        e.getRequestedBy(), ts(e.getCreatedAt())))
+                .toList();
+        List<AdjustmentView.DecisionView> decisions =
+                adjustmentDecisionRepo.listByRequest(r.getId()).stream()
+                        .sorted(Comparator.comparingInt(AdjustmentDecision::getSeq))
+                        .map(d -> new AdjustmentView.DecisionView(
+                                d.getId(), d.getSeq(), d.getOutcome().name(), d.getApprover(),
+                                d.getComment(), ts(d.getDecidedAt()),
+                                d.getStatusBefore().name(), d.getStatusAfter().name(),
+                                d.getAdjustmentBatchId()))
+                        .toList();
+        return new AdjustmentView(r.getId(), r.getOriginalBatchId(), r.getAdjustmentBatchId(),
+                r.getStatus().name(), r.getRequiredApprovals(), r.getApprovalsReceived(),
+                r.getThresholdAgreement(), money(r.getThresholdAmount()),
+                money(r.getDeltaGrossAmount()), r.getDeltaGrossCurrency(),
+                r.getReason(), r.getRequestedBy(), ts(r.getRequestedAt()),
+                r.getFinalizedBy(), ts(r.getProcessedAt()), r.getEventCount(),
+                r.getRejectedBy(), ts(r.getRejectedAt()), r.getRejectReason(),
+                events, decisions);
     }
 
     private static String money(BigDecimal v) {

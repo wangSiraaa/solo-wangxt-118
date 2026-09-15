@@ -1,0 +1,134 @@
+<div class="panel adjustment-panel">
+  <h2>确认方案差额更正</h2>
+  <p class="small muted">
+    仅更正个别已清偿发票的结算前差异，<b>不改写原批次、不清偿/恢复原始债权、不接银行</b>；
+    审批通过后生成唯一的差额批次（ADJUSTMENT）。与整单撤销互斥。
+  </p>
+
+  <!-- 差额批次视角 -->
+  <div class="adj-banner adj-batch" *ngIf="batch.kind === 'ADJUSTMENT'">
+    本批次是差额更正批次，更正自原确认批次
+    <a class="link" (click)="openBatch.emit(batch.adjustsBatchId!)">{{ batch.adjustsBatchId }}</a>；
+    差额批次不可再撤销或更正。
+  </div>
+
+  <ng-container *ngIf="batch.kind === 'NETTING'">
+    <!-- CONFIRMED 且无更正：发起 -->
+    <div *ngIf="batch.status === 'CONFIRMED' && !batch.adjustment && !batch.reversal" class="adj-request">
+      <label>更正原因<input [(ngModel)]="reason"></label>
+      <label>申请人<input [(ngModel)]="requestedBy"></label>
+      <label>生效范围<input [(ngModel)]="effectiveScope"></label>
+
+      <h3>选择需要更正的原始发票（来自本确认批次清偿明细）</h3>
+      <table class="cand">
+        <thead><tr><th></th><th>发票号</th><th>债权→债务</th><th class="num">原金额</th><th class="num">更正后金额</th></tr></thead>
+        <tbody>
+        <tr *ngFor="let d of candidates()">
+          <td><input type="checkbox" [checked]="isChecked(d.receivableId)"
+                     (change)="toggle(d, $any($event.target).checked)"></td>
+          <td><b>{{ d.invoiceNo }}</b><div class="muted small">{{ d.receivableId }}</div></td>
+          <td class="small">{{ d.creditorCode }} → {{ d.debtorCode }} · {{ d.originalCurrency }}</td>
+          <td class="num">{{ fmt(d.originalAmount) }}</td>
+          <td class="num">
+            <input class="num-input" type="number" step="0.01"
+                   [ngModel]="drafts.get(d.receivableId)"
+                   (ngModelChange)="drafts.set(d.receivableId, $event)"
+                   [disabled]="!isChecked(d.receivableId)">
+          </td>
+        </tr>
+        </tbody>
+      </table>
+      <button class="danger" [disabled]="busy || drafts.size === 0" (click)="submitRequest()">
+        发起差额更正申请
+      </button>
+    </div>
+
+    <!-- 已有更正（进行中或完成） -->
+    <ng-container *ngIf="batch.adjustment as a">
+      <ol class="stepper">
+        <li [class.done]="true">① 已确认<div class="small muted">{{ batch.confirmedAt }}</div></li>
+        <li [class.done]="a.status !== 'REQUESTED'" [class.active]="batch.status === 'ADJUSTMENT_PENDING'">
+          ② 更正申请<div class="small muted">{{ a.requestedAt }}</div>
+        </li>
+        <li [class.done]="a.status === 'PROCESSED'" [class.failed]="a.status === 'REJECTED'">
+          ③ 审批出差额批次<div class="small muted">{{ a.processedAt || a.rejectedAt || '—' }}</div>
+        </li>
+      </ol>
+
+      <div class="adj-banner pending" *ngIf="batch.status === 'ADJUSTMENT_PENDING'">
+        {{ thresholdText() }} · 已获 <b>{{ a.approvalsReceived }}</b> / {{ a.requiredApprovals }} 票
+      </div>
+
+      <!-- 发票更正事件（旧值/新值/差额，不可改） -->
+      <h3>发票更正事件（不可修改）</h3>
+      <table class="events">
+        <thead><tr>
+          <th>#</th><th>发票</th><th>更正项</th>
+          <th class="num">旧金额</th><th class="num">新金额</th>
+          <th>协议</th><th class="num">旧折算</th><th class="num">新折算</th><th class="num">差额({{ a.events[0]?.clearingCurrency }})</th>
+          <th>生效范围</th><th>原因</th>
+        </tr></thead>
+        <tbody>
+        <tr *ngFor="let e of a.events">
+          <td>{{ e.seq }}</td>
+          <td><b>{{ e.invoiceNo }}</b><div class="muted small">{{ e.receivableId }}</div></td>
+          <td>{{ e.correctedField === 'AMOUNT' ? '金额' : '协议归属' }}</td>
+          <td class="num">{{ e.oldCurrency }} {{ fmt(e.oldAmount) }}</td>
+          <td class="num">{{ e.newCurrency }} {{ fmt(e.newAmount) }}</td>
+          <td class="small">{{ e.oldAgreementCode }} → {{ e.newAgreementCode }}</td>
+          <td class="num small">{{ fmt(e.oldConverted) }}</td>
+          <td class="num small">{{ fmt(e.newConverted) }}</td>
+          <td class="num" [class.pos]="e.deltaConverted > 0" [class.neg]="e.deltaConverted < 0">
+            {{ e.deltaConverted > 0 ? '+' : '' }}{{ fmt(e.deltaConverted) }}
+          </td>
+          <td class="small muted">{{ e.effectiveScope }}</td>
+          <td class="small muted">{{ e.reason }}</td>
+        </tr>
+        </tbody>
+      </table>
+
+      <!-- 决议链 -->
+      <h3>更正审批决议</h3>
+      <table class="decision-chain">
+        <thead><tr><th>#</th><th>决议</th><th>审批人</th><th>意见</th><th>时间</th><th>状态变化</th><th>差额批次</th></tr></thead>
+        <tbody>
+        <tr *ngFor="let d of a.decisions">
+          <td>{{ d.seq }}</td>
+          <td><span class="badge" [class.payment]="d.outcome==='APPROVE'" [class.excluded]="d.outcome==='REJECT'">
+            {{ d.outcome === 'APPROVE' ? '通过' : '驳回' }}</span></td>
+          <td>{{ d.approver }}</td>
+          <td class="small">{{ d.comment }}</td>
+          <td class="small muted">{{ d.decidedAt }}</td>
+          <td class="small muted">{{ d.statusBefore }} → {{ d.statusAfter }}</td>
+          <td><a class="link" *ngIf="d.adjustmentBatchId" (click)="openBatch.emit(d.adjustmentBatchId!)">
+            {{ d.adjustmentBatchId }}</a><span *ngIf="!d.adjustmentBatchId">—</span></td>
+        </tr>
+        <tr *ngIf="!a.decisions.length"><td colspan="7" class="muted small">尚无决议</td></tr>
+        </tbody>
+      </table>
+
+      <!-- 审批输入（进行中） -->
+      <div *ngIf="batch.status === 'ADJUSTMENT_PENDING'" class="adj-decide">
+        <label>审批人（不可与申请人 “{{ a.requestedBy }}” 相同）
+          <input [(ngModel)]="approver" [placeholder]="a.approvalsReceived === 0 ? '复核人甲' : '复核人乙'">
+        </label>
+        <label>审批意见<input [(ngModel)]="comment"></label>
+        <div class="rev-actions">
+          <button [disabled]="busy" (click)="submitDecision('APPROVE')">
+            {{ a.approvalsReceived + 1 >= a.requiredApprovals ? '提交末审并生成差额批次' : '提交通过决议' }}
+          </button>
+          <button class="secondary" [disabled]="busy" (click)="submitDecision('REJECT')">驳回更正</button>
+        </div>
+      </div>
+
+      <!-- 完成 -->
+      <div class="adj-banner done" *ngIf="a.status === 'PROCESSED'">
+        差额更正已完成（不可逆），差额批次
+        <a class="link" (click)="openBatch.emit(a.adjustmentBatchId!)">{{ a.adjustmentBatchId }}</a>
+        已生成；原确认批次保持 CONFIRMED，原始发票与既有清偿明细不变。
+      </div>
+      <div class="adj-banner rejected" *ngIf="a.status === 'REJECTED'">
+        更正已驳回（{{ a.rejectedBy }} · {{ a.rejectedAt }}）：{{ a.rejectReason }}。原批次保持 CONFIRMED。
+      </div>    </ng-container>
+  </ng-container>
+</div>
