@@ -30,10 +30,12 @@ INSERT INTO agreement_party(id, agreement_code, entity_code) VALUES
  ('NA-LIMITED:A','NA-LIMITED','A'),
  ('NA-LIMITED:B','NA-LIMITED','B');
 
--- 内部记账汇率快照（手工维护，不接银行/行情）
+-- 内部记账汇率快照（手工维护，不接银行/行情）。
+-- 含一条月初即生效的汇率，保证以"当前时点"直接试算也能取到价（引擎取不晚于估值时点的最新一条）。
 INSERT INTO fx_rate(id, from_currency, to_currency, rate, rate_time, source) VALUES
+ ('FX-EURUSD-M0','EUR','USD',1.0850000000,TIMESTAMPTZ '2026-09-01 00:00:00+00','资金部月初记账汇率'),
  ('FX-EURUSD-01','EUR','USD',1.0850000000,TIMESTAMPTZ '2026-09-15 09:30:00+00','资金部月中记账汇率'),
- ('FX-USDEUR-01','USD','EUR',0.9216589862,TIMESTAMPTZ '2026-09-15 09:30:00+00','资金部月中记账汇率(倒数)');
+ ('FX-USDEUR-01','USD','EUR',0.9216589862,TIMESTAMPTZ '2026-09-01 00:00:00+00','资金部月初记账汇率(倒数)');
 
 -- 场景 1：三方等额环 A->B->C->A，各 1,000,000 CNY
 INSERT INTO receivable(id, invoice_no, creditor_code, debtor_code, currency, amount, invoice_date, agreement_code, pledged, disputed, status) VALUES

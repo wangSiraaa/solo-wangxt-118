@@ -11,8 +11,10 @@
 
   <ng-container *ngIf="!selected(); else detailTpl">
     <div class="grid layout">
-      <app-batch-list [batches]="batches()" [busy]="busy()"
-        (open)="openBatch($event)" (createTrial)="createTrial()"></app-batch-list>
+      <div class="grid">
+        <app-trial-form [busy]="busy()" (create)="createTrial($event)"></app-trial-form>
+        <app-batch-list [batches]="batches()" (open)="openBatch($event)"></app-batch-list>
+      </div>
       <app-fx-panel [rates]="rates()"></app-fx-panel>
     </div>
   </ng-container>

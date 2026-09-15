@@ -10,7 +10,5 @@ import { BatchSummary } from '../../models/models';
 })
 export class BatchListComponent {
   @Input({ required: true }) batches: BatchSummary[] = [];
-  @Input() busy = false;
   @Output() open = new EventEmitter<string>();
-  @Output() createTrial = new EventEmitter<void>();
 }

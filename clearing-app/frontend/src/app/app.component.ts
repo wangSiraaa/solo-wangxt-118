@@ -4,12 +4,14 @@ import { ClearingApi } from './api/clearing.api';
 import { FxPanelComponent } from './components/fx-panel/fx-panel.component';
 import { BatchDetailComponent } from './components/batch-detail/batch-detail.component';
 import { BatchListComponent } from './components/batch-list/batch-list.component';
+import { TrialFormComponent, TrialFormValue } from './components/trial-form/trial-form.component';
 import { BatchSummary, BatchView, FxRateView } from './models/models';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule, BatchListComponent, BatchDetailComponent, FxPanelComponent],
+  imports: [CommonModule, BatchListComponent, BatchDetailComponent, FxPanelComponent,
+    TrialFormComponent],
   templateUrl: './app.component.html'
 })
 export class AppComponent implements OnInit {
@@ -30,10 +32,11 @@ export class AppComponent implements OnInit {
     this.api.fxRates().subscribe(r => this.rates.set(r));
   }
 
-  createTrial(): void {
+  createTrial(form: TrialFormValue): void {
     this.busy.set(true);
     this.error.set(null);
-    this.api.runTrial('资金部清算试算 ' + new Date().toLocaleString('zh-CN'), '资金专员')
+    // valuationTime 始终随请求提交（表单默认当前时点，用户可改）。
+    this.api.runTrial(form.label, form.createdBy, form.valuationTime)
       .subscribe({
         next: b => {
           this.busy.set(false);
@@ -53,6 +56,7 @@ export class AppComponent implements OnInit {
 
   closeDetail(): void {
     this.selected.set(null);
+    this.refresh();
   }
 
   confirm(approver: string): void {
@@ -60,6 +64,7 @@ export class AppComponent implements OnInit {
     if (!cur) { return; }
     this.busy.set(true);
     this.error.set(null);
+    // 确认复用试算批次的估值时点（后端 origin.getValuationTime()），无需前端再传。
     this.api.confirm(cur.id, approver).subscribe({
       next: confirmed => {
         this.busy.set(false);

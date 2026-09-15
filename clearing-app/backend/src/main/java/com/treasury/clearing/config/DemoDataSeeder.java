@@ -65,12 +65,15 @@ public class DemoDataSeeder {
             parties.save(new AgreementParty("NA-LIMITED", "A"));
             parties.save(new AgreementParty("NA-LIMITED", "B"));
 
+            fx.save(new FxRate("FX-EURUSD-M0", "EUR", "USD",
+                    new BigDecimal("1.0850000000"),
+                    Instant.parse("2026-09-01T00:00:00Z"), "资金部月初记账汇率"));
             fx.save(new FxRate("FX-EURUSD-01", "EUR", "USD",
                     new BigDecimal("1.0850000000"),
                     Instant.parse("2026-09-15T09:30:00Z"), "资金部月中记账汇率"));
             fx.save(new FxRate("FX-USDEUR-01", "USD", "EUR",
                     new BigDecimal("0.9216589862"),
-                    Instant.parse("2026-09-15T09:30:00Z"), "资金部月中记账汇率(倒数)"));
+                    Instant.parse("2026-09-01T00:00:00Z"), "资金部月初记账汇率(倒数)"));
 
             LocalDate d = LocalDate.of(2026, 8, 20);
             // 三方等额环

@@ -73,7 +73,7 @@ clearing-app/
 
 | 方法/路径 | 说明 |
 |---|---|
-| `POST /api/batches/trial` | 试算（请求体可带 `valuationTime`，缺省=当前时刻），**不动原始债权** |
+| `POST /api/batches/trial` | 试算（请求体可带 `valuationTime`，**缺省=当前时刻**），**不动原始债权** |
 | `POST /api/batches/{id}/confirm` | 确认试算方案；沿用试算的估值时点重新计算，发票转 `CLEARED` |
 | `GET /api/batches` / `GET /api/batches/{id}` | 批次列表 / 完整明细（组、头寸、指令、发票清偿、尾差、排除） |
 | `GET /api/receivables` | 原始债权只读视图 |
@@ -108,9 +108,12 @@ npm install
 npm start          # http://localhost:4200，通过 proxy.conf.json 代理到 :8080
 ```
 
-> demo 种子里的内部记账汇率时点是 `2026-09-15T09:30:00Z`。通过界面「新建试算」时若本机时钟早于
-> 该时点，请直接调用 `POST /api/batches/trial` 并在请求体带 `"valuationTime":"2026-09-15T10:00:00Z"`
-> （系统只取**不晚于估值时点**的最新汇率，这是刻意的时点控制，不是缺陷）。
+页面顶部「新建清算试算」面板提供**方案名称、操作人、估值时点**三个字段：
+
+- 估值时点用 `datetime-local` 控件，**默认当前时刻（精确到分钟）**，可任意编辑，下方实时显示对应的 UTC 瞬时；
+- 提交时该时点随 `valuationTime` 一起发给后端；后端只取**不晚于该时点的最新内部记账汇率**；
+- demo 种子里有一条 `2026-09-01 00:00Z` 起生效的 EUR→USD 汇率，因此用默认当前时点也能直接算出跨币种组；
+- **确认方案不重选时点**：后端确认时复用该试算批次保存的 `valuation_time`，保证「看到的就是确认的」。
 
 ### 4.4 测试与验收
 

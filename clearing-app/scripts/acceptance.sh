@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
-# 端到端 HTTP 验收脚本（后端需已启动，demo 种子含 2026-09-15 09:30 的 EUR->USD 汇率）
+# 端到端 HTTP 验收脚本（后端需已启动，demo 种子含 2026-09-01 起生效的 EUR->USD 汇率，
+# 因此以"当前时点"直接试算即可取到汇率，与浏览器表单默认行为一致）
 set -euo pipefail
 BASE=${BASE:-http://localhost:8080}
-VT="2026-09-15T10:00:00Z"
+# 与前端 datetime-local 一致：取当前时刻（UTC ISO）。需要复现固定时点可 VT=... 覆盖。
+VT=${VT:-$(node -e "console.log(new Date().toISOString())")}
 
+echo "估值/汇率时点(UTC) = $VT"
 echo "== 1. 新建试算（不改动原始债权） =="
 TRIAL=$(curl -s -X POST "$BASE/api/batches/trial" -H 'Content-Type: application/json' \
   -d "{\"label\":\"验收脚本\",\"createdBy\":\"验收员\",\"valuationTime\":\"$VT\"}")

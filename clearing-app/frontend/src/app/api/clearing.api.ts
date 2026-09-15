@@ -15,8 +15,8 @@ export class ClearingApi {
     return this.http.get<BatchView>(`/api/batches/${id}`);
   }
 
-  runTrial(label: string, createdBy: string): Observable<BatchView> {
-    return this.http.post<BatchView>('/api/batches/trial', { label, createdBy });
+  runTrial(label: string, createdBy: string, valuationTime: string): Observable<BatchView> {
+    return this.http.post<BatchView>('/api/batches/trial', { label, createdBy, valuationTime });
   }
 
   confirm(id: string, createdBy: string): Observable<BatchView> {
