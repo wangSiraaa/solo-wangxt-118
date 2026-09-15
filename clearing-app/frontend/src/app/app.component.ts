@@ -35,7 +35,6 @@ export class AppComponent implements OnInit {
   createTrial(form: TrialFormValue): void {
     this.busy.set(true);
     this.error.set(null);
-    // valuationTime 始终随请求提交（表单默认当前时点，用户可改）。
     this.api.runTrial(form.label, form.createdBy, form.valuationTime)
       .subscribe({
         next: b => {
@@ -43,10 +42,7 @@ export class AppComponent implements OnInit {
           this.selected.set(b);
           this.api.listBatches().subscribe(list => this.batches.set(list));
         },
-        error: e => {
-          this.busy.set(false);
-          this.error.set(e?.error?.error ?? '试算失败');
-        }
+        error: e => this.fail(e, '试算失败')
       });
   }
 
@@ -64,17 +60,71 @@ export class AppComponent implements OnInit {
     if (!cur) { return; }
     this.busy.set(true);
     this.error.set(null);
-    // 确认复用试算批次的估值时点（后端 origin.getValuationTime()），无需前端再传。
     this.api.confirm(cur.id, approver).subscribe({
       next: confirmed => {
         this.busy.set(false);
         this.selected.set(confirmed);
         this.api.listBatches().subscribe(list => this.batches.set(list));
       },
-      error: e => {
-        this.busy.set(false);
-        this.error.set(e?.error?.error ?? '确认失败');
-      }
+      error: e => this.fail(e, '确认失败')
     });
+  }
+
+  requestReversal(payload: { reason: string; by: string }): void {
+    const cur = this.selected();
+    if (!cur) { return; }
+    this.busy.set(true);
+    this.error.set(null);
+    this.api.requestReversal(cur.id, payload.reason, payload.by).subscribe({
+      // 申请后回到原批次（此时 REVERSAL_PENDING）
+      next: () => {
+        this.busy.set(false);
+        this.reload(cur.id);
+      },
+      error: e => this.fail(e, '撤销申请失败')
+    });
+  }
+
+  approveReversal(approver: string): void {
+    const cur = this.selected();
+    if (!cur) { return; }
+    this.busy.set(true);
+    this.error.set(null);
+    this.api.approveReversal(cur.id, approver).subscribe({
+      // 审批通过返回的是冲正批次；再刷新到原批次以展示 REVERSED 与关联
+      next: () => {
+        this.busy.set(false);
+        this.api.listBatches().subscribe(list => this.batches.set(list));
+        this.reload(cur.id);
+      },
+      error: e => this.fail(e, '冲正失败')
+    });
+  }
+
+  rejectReversal(payload: { by: string; reason: string }): void {
+    const cur = this.selected();
+    if (!cur) { return; }
+    this.busy.set(true);
+    this.error.set(null);
+    this.api.rejectReversal(cur.id, payload.by, payload.reason).subscribe({
+      next: () => {
+        this.busy.set(false);
+        this.reload(cur.id);
+      },
+      error: e => this.fail(e, '驳回失败')
+    });
+  }
+
+  private reload(id: string): void {
+    this.api.getBatch(id).subscribe({
+      next: b => this.selected.set(b),
+      error: () => this.selected.set(null)
+    });
+  }
+
+  private fail(e: unknown, fallback: string): void {
+    this.busy.set(false);
+    const msg = (e as { error?: { error?: string } })?.error?.error ?? fallback;
+    this.error.set(msg);
   }
 }

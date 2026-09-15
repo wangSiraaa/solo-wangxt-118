@@ -6,6 +6,8 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
+
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -21,6 +23,10 @@ public class Receivable {
     @Id
     @Column(length = 40)
     private String id;
+
+    /** 乐观锁：清偿/恢复并发时由 JPA 转成 409，防止重复改动状态。 */
+    @Version
+    private long version;
 
     /** 发票/合同号，资金人员从债务图可追溯到原始单据。 */
     @Column(name = "invoice_no", nullable = false, length = 40)
@@ -123,5 +129,14 @@ public class Receivable {
 
     public void markCleared() {
         this.status = ReceivableStatus.CLEARED;
+    }
+
+    /** 撤销冲正：把已确认清偿的债权恢复为活跃（仅允许从 CLEARED 恢复）。 */
+    public void reactivate() {
+        if (this.status != ReceivableStatus.CLEARED) {
+            throw new ConflictException(
+                    "债权 " + invoiceNo + " 当前状态为 " + status + "，非 CLEARED，不能恢复（可能已被并发操作改动）");
+        }
+        this.status = ReceivableStatus.ACTIVE;
     }
 }

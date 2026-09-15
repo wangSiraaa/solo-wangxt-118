@@ -1,0 +1,29 @@
+.reversal-panel { margin-top: 16px; }
+.stepper {
+  display: flex; gap: 10px; list-style: none; padding: 0; margin: 8px 0 14px;
+}
+.stepper li {
+  flex: 1; background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: 8px; padding: 8px 10px; color: var(--muted); font-size: 13px;
+}
+.stepper li.active { border-color: var(--amber); color: var(--amber); }
+.stepper li.done { border-color: var(--green); color: var(--green); }
+.stepper li.failed { border-color: var(--red); color: var(--red); }
+
+.rev-form, .rev-approve { display: grid; gap: 8px; max-width: 420px; }
+label { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: 12px; }
+.rev-actions { display: flex; gap: 8px; }
+.link { color: var(--accent); cursor: pointer; text-decoration: underline; }
+
+.rev-banner {
+  border-radius: 8px; padding: 10px 12px; margin: 8px 0; font-size: 13px;
+  border: 1px solid var(--line);
+}
+.rev-banner.pending { background: #4a3a16; border-color: var(--amber); color: #fde68a; }
+.rev-banner.done { background: #14432f; border-color: var(--green); color: #a7f3d0; }
+.rev-banner.rejected { background: #4c2626; border-color: var(--red); color: #fecaca; }
+.rev-banner.reversal-batch { background: var(--panel-2); color: var(--violet); border-color: var(--violet); }
+
+table.audit { margin-top: 12px; max-width: 640px; }
+table.audit th { width: 150px; color: var(--muted); font-weight: 500; }
+table.audit th, table.audit td { vertical-align: top; }

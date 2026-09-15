@@ -5,24 +5,30 @@
   <table>
     <thead>
     <tr>
-      <th>批次</th><th>状态</th>
+      <th>批次</th><th>性质</th><th>状态</th>
       <th class="num">原始笔数</th><th class="num">清算后笔数</th><th class="num">排除</th>
       <th>创建时间</th><th>操作人</th>
     </tr>
     </thead>
     <tbody>
     <tr class="clickable" *ngFor="let b of batches" (click)="open.emit(b.id)">
-      <td><b>{{ b.label }}</b><div class="muted small">{{ b.id }}</div></td>
+      <td><b>{{ b.label }}</b><div class="muted small">{{ b.id }}</div>
+        <div class="small violet" *ngIf="b.kind === 'REVERSAL'">冲回 {{ b.reversesBatchId }}</div>
+        <div class="small green" *ngIf="b.reversalBatchId">已被 {{ b.reversalBatchId }} 冲正</div>
+      </td>
+      <td>{{ b.kind === 'REVERSAL' ? '冲正' : '清算' }}</td>
       <td><span class="badge" [class.sim]="b.status === 'SIMULATED'"
-                [class.cfm]="b.status === 'CONFIRMED'">
-        {{ b.status === 'SIMULATED' ? '试算' : '已确认' }}</span></td>
+                [class.cfm]="b.status === 'CONFIRMED'"
+                [class.pending]="b.status === 'REVERSAL_PENDING'"
+                [class.reversed]="b.status === 'REVERSED'">
+        {{ statusText(b.status) }}</span></td>
       <td class="num">{{ b.originalClaimCount }}</td>
       <td class="num pos">{{ b.resultingEntryCount }}</td>
       <td class="num neg">{{ b.excludedCount }}</td>
       <td class="small">{{ b.createdAt }}</td>
       <td class="small">{{ b.createdBy || '—' }}</td>
     </tr>
-    <tr *ngIf="!batches.length"><td colspan="7" class="muted">暂无批次，点击右上角新建试算</td></tr>
+    <tr *ngIf="!batches.length"><td colspan="8" class="muted">暂无批次，点击上方新建试算</td></tr>
     </tbody>
   </table>
 </div>

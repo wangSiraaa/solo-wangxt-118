@@ -6,6 +6,7 @@ import com.treasury.clearing.calc.GroupResult;
 import com.treasury.clearing.calc.NettingEngine;
 import com.treasury.clearing.domain.BatchStatus;
 import com.treasury.clearing.domain.ClearingBatch;
+import com.treasury.clearing.domain.ConflictException;
 import com.treasury.clearing.domain.ClearingEntry;
 import com.treasury.clearing.domain.ClearingGroup;
 import com.treasury.clearing.domain.ExcludedClaim;
@@ -175,8 +176,21 @@ public class TrialService {
 
         if (confirm) {
             // 确认才改变原始债权状态；金额等原始字段保持不动。
-            eligible.forEach(Receivable::markCleared);
-            receivableRepo.saveAll(eligible);
+            // 对将被清偿的债权加排他锁并复验状态，与撤销冲正串行化：
+            // 若其中任何一张已被并发的撤销恢复/改动（非 ACTIVE），整体 409，不重复清偿。
+            List<String> eligibleIds = eligible.stream().map(Receivable::getId).toList();
+            List<Receivable> locked = eligibleIds.isEmpty()
+                    ? List.of()
+                    : receivableRepo.findAllByIdForUpdate(eligibleIds);
+            for (Receivable r : locked) {
+                if (r.getStatus() != ReceivableStatus.ACTIVE) {
+                    throw new ConflictException("债权 " + r.getInvoiceNo()
+                            + " 已被其它操作改动（状态 " + r.getStatus()
+                            + "），与确认并发冲突，请刷新后重试");
+                }
+                r.markCleared();
+            }
+            receivableRepo.saveAll(locked);
             saved.confirm(Instant.now());
         }
         return saved;
@@ -190,6 +204,26 @@ public class TrialService {
         if (origin.getStatus() != BatchStatus.SIMULATED) {
             throw new ClearingRuleException("只有试算批次可以确认，当前状态: " + origin.getStatus());
         }
+
+        // 重复确认 / 与撤销并发保护：该试算方案原本要清偿的债权必须仍是 ACTIVE。
+        // 已被某次确认清偿（CLEARED）或处于撤销窗口（债权仍 CLEARED）时直接 409；
+        // 与撤销冲正并发时，这里的行锁与冲正事务互斥串行。
+        List<String> plannedIds = origin.getGroups().stream()
+                .flatMap(g -> g.getDischarges().stream())
+                .map(InvoiceDischarge::getReceivableId)
+                .distinct()
+                .toList();
+        if (!plannedIds.isEmpty()) {
+            List<Receivable> locked = receivableRepo.findAllByIdForUpdate(plannedIds);
+            for (Receivable r : locked) {
+                if (r.getStatus() != ReceivableStatus.ACTIVE) {
+                    throw new ConflictException("该试算方案涉及的发票 " + r.getInvoiceNo()
+                            + " 已被确认或处于撤销处理中（状态 " + r.getStatus()
+                            + "），不能重复确认，请刷新后重试");
+                }
+            }
+        }
+
         return runTrial(origin.getLabel() + "（确认）", origin.getValuationTime(),
                 createdBy != null ? createdBy : origin.getCreatedBy(), true);
     }

@@ -1,8 +1,12 @@
 package com.treasury.clearing.service;
 
 import com.treasury.clearing.domain.ClearingBatch;
+import com.treasury.clearing.domain.ReversalRequest;
 import com.treasury.clearing.dto.BatchView;
+import com.treasury.clearing.dto.ReversalView;
+import com.treasury.clearing.repo.ClearingBatchRepository;
 import com.treasury.clearing.repo.ExcludedClaimRepository;
+import com.treasury.clearing.repo.ReversalRequestRepository;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -14,9 +18,22 @@ import java.util.List;
 public class BatchViewMapper {
 
     private final ExcludedClaimRepository excludedRepo;
+    private final ReversalRequestRepository reversalRepo;
+    private final ClearingBatchRepository batchRepo;
 
-    public BatchViewMapper(ExcludedClaimRepository excludedRepo) {
+    public BatchViewMapper(ExcludedClaimRepository excludedRepo,
+                           ReversalRequestRepository reversalRepo,
+                           ClearingBatchRepository batchRepo) {
         this.excludedRepo = excludedRepo;
+        this.reversalRepo = reversalRepo;
+        this.batchRepo = batchRepo;
+    }
+
+    /** 按 id 在事务内重新加载后装配，避免调用方传入脱管实体导致懒加载失败。 */
+    @Transactional(readOnly = true)
+    public BatchView toViewById(String id) {
+        return toView(batchRepo.findById(id)
+                .orElseThrow(() -> new java.util.NoSuchElementException("批次不存在: " + id)));
     }
 
     @Transactional(readOnly = true)
@@ -64,11 +81,31 @@ public class BatchViewMapper {
                                 .toList()))
                 .toList();
 
-        return new BatchView(b.getId(), b.getLabel(), b.getStatus().name(),
+        ReversalView reversal = reversalRepo.findByOriginalBatchId(b.getId())
+                .map(this::toReversalView).orElse(null);
+
+        return new BatchView(b.getId(), b.getVersion(), b.getLabel(), b.getStatus().name(),
+                b.getKind().name(),
+                b.getReversesBatchId(), b.getReversalBatchId(),
                 b.getCreatedAt().toString(),
                 b.getValuationTime().toString(),
                 b.getConfirmedAt() != null ? b.getConfirmedAt().toString() : null,
+                b.getReversedAt() != null ? b.getReversedAt().toString() : null,
+                b.getReversalRequestedAt() != null ? b.getReversalRequestedAt().toString() : null,
                 b.getOriginalClaimCount(), b.getResultingEntryCount(), b.getExcludedCount(),
-                b.getCreatedBy(), groups, excluded);
+                b.getCreatedBy(), reversal, groups, excluded);
+    }
+
+    private ReversalView toReversalView(ReversalRequest r) {
+        return new ReversalView(r.getId(), r.getOriginalBatchId(), r.getReversalBatchId(),
+                r.getStatus().name(), r.getReason(),
+                r.getRequestedBy(), ts(r.getRequestedAt()),
+                r.getApprovedBy(), ts(r.getApprovedAt()),
+                ts(r.getProcessedAt()), r.getRestoredCount(),
+                r.getRejectedBy(), ts(r.getRejectedAt()), r.getRejectReason());
+    }
+
+    private static String ts(java.time.Instant t) {
+        return t != null ? t.toString() : null;
     }
 }

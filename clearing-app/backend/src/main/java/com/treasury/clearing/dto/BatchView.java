@@ -4,15 +4,22 @@ import java.math.BigDecimal;
 import java.util.List;
 
 public record BatchView(String id,
+                        long version,
                         String label,
                         String status,
+                        String kind,
+                        String reversesBatchId,
+                        String reversalBatchId,
                         String createdAt,
                         String valuationTime,
                         String confirmedAt,
+                        String reversedAt,
+                        String reversalRequestedAt,
                         int originalClaimCount,
                         int resultingEntryCount,
                         int excludedCount,
                         String createdBy,
+                        ReversalView reversal,
                         List<GroupView> groups,
                         List<ExcludedView> excluded) {
 

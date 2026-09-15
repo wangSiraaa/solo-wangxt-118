@@ -21,6 +21,11 @@
 
   <ng-template #detailTpl>
     <app-batch-detail [batch]="selected()!" [busy]="busy()"
-      (confirmed)="confirm($event)" (closed)="closeDetail()"></app-batch-detail>
+      (confirmed)="confirm($event)"
+      (reversalRequested)="requestReversal($event)"
+      (reversalApproved)="approveReversal($event)"
+      (reversalRejected)="rejectReversal($event)"
+      (openBatch)="openBatch($event)"
+      (closed)="closeDetail()"></app-batch-detail>
   </ng-template>
 </div>

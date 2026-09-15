@@ -1,13 +1,26 @@
 <div class="panel detail">
   <div class="detail-head">
     <div>
-      <h2>{{ batch.label }} <span class="badge" [class.sim]="batch.status === 'SIMULATED'"
-          [class.cfm]="batch.status === 'CONFIRMED'">
-        {{ batch.status === 'SIMULATED' ? '试算方案' : '已确认' }}</span></h2>
+      <h2>{{ batch.label }}
+        <span class="badge" [class.sim]="batch.status === 'SIMULATED'"
+              [class.cfm]="batch.status === 'CONFIRMED'"
+              [class.pending]="batch.status === 'REVERSAL_PENDING'"
+              [class.reversed]="batch.status === 'REVERSED'">
+          {{ statusText }}
+        </span>
+        <span class="badge setoff" *ngIf="batch.kind === 'REVERSAL'">冲正批次</span>
+      </h2>
       <div class="muted small">{{ batch.id }} · 创建 {{ batch.createdAt }}
         · 估值时点 {{ batch.valuationTime }}
         <ng-container *ngIf="batch.confirmedAt"> · 确认 {{ batch.confirmedAt }}</ng-container>
+        <ng-container *ngIf="batch.reversedAt"> · 冲正 {{ batch.reversedAt }}</ng-container>
         · {{ batch.createdBy || '未署名' }}</div>
+      <div class="muted small" *ngIf="batch.reversesBatchId">
+        冲回原批次：<a class="link" (click)="openBatch.emit(batch.reversesBatchId!)">{{ batch.reversesBatchId }}</a>
+      </div>
+      <div class="muted small" *ngIf="batch.reversalBatchId">
+        冲正批次：<a class="link" (click)="openBatch.emit(batch.reversalBatchId!)">{{ batch.reversalBatchId }}</a>
+      </div>
     </div>
     <div class="head-actions">
       <button class="secondary" (click)="closed.emit()">返回列表</button>
@@ -122,6 +135,14 @@
       </div>
     </div>
   </ng-container>
+
+  <!-- 撤销与冲正：仅普通批次（含已确认/审批中/已冲正）展示 -->
+  <app-reversal-panel *ngIf="batch.kind === 'NETTING' && batch.status !== 'SIMULATED'"
+    [batch]="batch" [busy]="busy"
+    (request)="reversalRequested.emit($event)"
+    (approve)="reversalApproved.emit($event)"
+    (reject)="reversalRejected.emit($event)"
+    (openBatch)="openBatch.emit($event)"></app-reversal-panel>
 
   <div class="excluded-block" *ngIf="batch.excluded.length">
     <h3>被排除债权（保留原债务，不参与互抵）</h3>

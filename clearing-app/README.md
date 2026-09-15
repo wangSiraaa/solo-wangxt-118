@@ -19,9 +19,43 @@
 | 各法人**净头寸不能改变** | 引擎内断言：每组净头寸合计为 0；逐主体「毛应收−毛应付」= 净头寸 |
 | **小额尾差**不得破坏余额 | 现金净头寸只按已取整发票金额轧差；逐笔换汇尾差与承担方归集行**零和单列**，不产生收付 |
 | 试算 vs 确认严格区分 | 试算 `SIMULATED` 不改原始债权；确认 `CONFIRMED` 仅把发票状态置 `CLEARED`，金额字段不动 |
+| 确认后可撤销冲正 | 见下节「撤销与冲正」：原方案完整保留，新增一条冲正批次恢复本次确认清偿的债权 |
 | 不接真实银行 | 无任何出金接口；确认只写台账状态与批次留痕 |
 
 被排除的债权**不删除、不改金额**，逐张写入 `excluded_claim` 并附原因，原始债务完整保留。
+
+---
+
+## 1.5 撤销与冲正确认后账务依据变更时使用
+
+**不可逆审计，不删改原方案。** 流程是“申请 → 审批 → 冲正”两段式：
+
+```
+CONFIRMED ──发起撤销申请──▶ REVERSAL_PENDING ──审批通过──▶ REVERSED（终态）
+     ▲                            │
+     └──────── 审批驳回 ──────────┘
+```
+
+- **原确认批次永不修改金额**：其估值时点、净头寸、指令、逐发票清偿明细、操作者全部保留可追溯；
+  冲正通过**新增**一条 `kind=REVERSAL` 的冲正批次表达，两者双向关联
+  （原批次 `reversal_batch_id`、冲正批次 `reverses_batch_id`）。
+- 冲正批次镜像原方案：净头寸取反、毛应收/应付交换、指令方向交换（冲回原资金效果）、尾差行取反，
+  并沿用原估值时点；本次确认实际清偿的债权由 `CLEARED` 恢复为 `ACTIVE`。
+- 撤销申请单独落 `reversal_request`（申请人/审批人/时间/原因/恢复张数/冲正批次），审批中可驳回。
+
+**并发、重复与重启的一致性保证：**
+
+- 批次、撤销申请、债权三张表都有 `@Version` 乐观锁；撤销申请/审批对批次行、申请行、相关债权行加
+  排他锁（`PESSIMISTIC_WRITE`）串行化；`reversal_request.original_batch_id` 唯一约束兜底。
+- 同一确认批次最多一条申请、最多一条冲正批次、债权最多恢复一次：
+  重复申请、重复/并发审批、待审批时再次确认，均返回 **409** 且不改动债权。
+- 审批是单事务原子操作：构建冲正批次、恢复债权、原批次置 `REVERSED`、回填申请同进同退。
+  处理中途失败或服务 `kill -9` 重启后，申请仍为 `REQUESTED`、无冲正批次落地，可安全重试；
+  已完成阶段通过 `PROCESSED` 去重，重试只返回 409 而不会再生成冲正或重复恢复。
+- 冲正批次本身不可再撤销；质押/争议/无协议债权自始至终保持 `ACTIVE`。
+
+前端批次详情页有撤销进度条（已确认 → 撤销申请 → 审批冲正）、发起/审批/驳回表单、原批次↔冲正批次
+跳转链接与只读审计表；冲正批次会明确标注“冲正批次”。
 
 ---
 
@@ -75,6 +109,10 @@ clearing-app/
 |---|---|
 | `POST /api/batches/trial` | 试算（请求体可带 `valuationTime`，**缺省=当前时刻**），**不动原始债权** |
 | `POST /api/batches/{id}/confirm` | 确认试算方案；沿用试算的估值时点重新计算，发票转 `CLEARED` |
+| `POST /api/batches/{id}/reversal-request` | 仅对 `CONFIRMED` 的普通批次发起撤销申请（原因 + 申请人），批次转 `REVERSAL_PENDING` |
+| `POST /api/batches/{id}/reversal/approve` | 审批通过：生成一条 `kind=REVERSAL` 冲正批次，恢复本次确认清偿的债权，原批次转 `REVERSED` |
+| `POST /api/batches/{id}/reversal/reject` | 审批驳回：申请 `REJECTED`，原批次回到 `CONFIRMED`，债权不动 |
+| `GET /api/batches/{id}/reversal` | 撤销申请审计视图（申请/审批人、时间、原因、冲正批次、恢复张数） |
 | `GET /api/batches` / `GET /api/batches/{id}` | 批次列表 / 完整明细（组、头寸、指令、发票清偿、尾差、排除） |
 | `GET /api/receivables` | 原始债权只读视图 |
 | `GET|POST /api/fx-rates` | 资金部手工维护内部记账汇率（币种对、汇率、时点、来源） |
@@ -118,8 +156,9 @@ npm start          # http://localhost:4200，通过 proxy.conf.json 代理到 :8
 ### 4.4 测试与验收
 
 ```bash
-cd backend && mvn test                 # 9 个测试：引擎纯单测 + 服务级集成 + 全量守恒
-bash scripts/acceptance.sh             # 黑盒 HTTP 验收（需先启动 demo 实例）
+cd backend && mvn test                 # 15 个测试：引擎单测 + 服务级集成 + 全量守恒 + 撤销/并发/回滚
+bash scripts/acceptance.sh             # 黑盒 HTTP 验收：清算缩减/原债务保留（需先启动实例）
+bash scripts/acceptance-reversal.sh    # 黑盒 HTTP 验收：撤销申请/审批/重复冲突/债权恢复/回归
 ```
 
 ---

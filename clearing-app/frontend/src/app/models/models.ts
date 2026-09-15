@@ -1,13 +1,38 @@
+export type BatchStatus = 'SIMULATED' | 'CONFIRMED' | 'REVERSAL_PENDING' | 'REVERSED';
+export type BatchKind = 'NETTING' | 'REVERSAL';
+export type ReversalStatus = 'REQUESTED' | 'PROCESSED' | 'REJECTED';
+
 export interface BatchSummary {
   id: string;
+  version: number;
   label: string;
-  status: 'SIMULATED' | 'CONFIRMED';
+  status: BatchStatus;
+  kind: BatchKind;
+  reversesBatchId: string | null;
+  reversalBatchId: string | null;
   createdAt: string;
   confirmedAt: string | null;
   originalClaimCount: number;
   resultingEntryCount: number;
   excludedCount: number;
   createdBy: string | null;
+}
+
+export interface ReversalView {
+  id: string;
+  originalBatchId: string;
+  reversalBatchId: string | null;
+  status: ReversalStatus;
+  reason: string | null;
+  requestedBy: string | null;
+  requestedAt: string;
+  approvedBy: string | null;
+  approvedAt: string | null;
+  processedAt: string | null;
+  restoredCount: number | null;
+  rejectedBy: string | null;
+  rejectedAt: string | null;
+  rejectReason: string | null;
 }
 export interface DischargeView {
   receivableId: string;
@@ -72,6 +97,9 @@ export interface ExcludedView {
 
 export interface BatchView extends BatchSummary {
   valuationTime: string;
+  reversedAt: string | null;
+  reversalRequestedAt: string | null;
+  reversal: ReversalView | null;
   groups: GroupView[];
   excluded: ExcludedView[];
 }

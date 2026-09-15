@@ -100,3 +100,7 @@ input, select {
   display: flex; justify-content: space-between; align-items: center; gap: 10px;
 }
 .fx-panel table td { font-variant-numeric: tabular-nums; }
+
+.badge.pending { background: #4a3a16; color: var(--amber); }
+.badge.reversed { background: #3b2f57; color: var(--violet); }
+a.link { color: var(--accent); cursor: pointer; text-decoration: underline; }

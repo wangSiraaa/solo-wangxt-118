@@ -1,6 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { Component, EventEmitter, Input, Output } from '@angular/core';
-import { BatchSummary } from '../../models/models';
+import { BatchStatus, BatchSummary } from '../../models/models';
 
 @Component({
   selector: 'app-batch-list',
@@ -11,4 +11,13 @@ import { BatchSummary } from '../../models/models';
 export class BatchListComponent {
   @Input({ required: true }) batches: BatchSummary[] = [];
   @Output() open = new EventEmitter<string>();
+
+  statusText(s: BatchStatus): string {
+    return ({
+      SIMULATED: '试算',
+      CONFIRMED: '已确认',
+      REVERSAL_PENDING: '撤销审批中',
+      REVERSED: '已冲正'
+    } as Record<BatchStatus, string>)[s] ?? s;
+  }
 }

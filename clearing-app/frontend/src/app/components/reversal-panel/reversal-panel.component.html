@@ -1,0 +1,100 @@
+<div class="panel reversal-panel">
+  <h2>撤销与冲正</h2>
+
+  <!-- 冲正批次视角：提示其来源，不允许再撤销 -->
+  <div class="rev-banner reversal-batch" *ngIf="batch.kind === 'REVERSAL'">
+    本批次是冲正批次，冲回原确认批次
+    <a class="link" (click)="openBatch.emit(batch.reversesBatchId!)">
+      {{ batch.reversesBatchId }}
+    </a>
+    ；冲正批次不可再撤销。
+  </div>
+
+  <ng-container *ngIf="batch.kind === 'NETTING'">
+    <!-- 进度条 -->
+    <ol class="stepper">
+      <li [class.done]="true">① 已确认
+        <div class="small muted">{{ batch.confirmedAt }}</div>
+      </li>
+      <li [class.done]="batch.status !== 'CONFIRMED'"
+          [class.active]="batch.status === 'REVERSAL_PENDING'">
+        ② 撤销申请
+        <div class="small muted">{{ batch.reversalRequestedAt || '—' }}</div>
+      </li>
+      <li [class.done]="batch.status === 'REVERSED'"
+          [class.failed]="batch.reversal?.status === 'REJECTED'">
+        ③ 审批冲正
+        <div class="small muted">{{ batch.reversedAt || (batch.reversal?.rejectedAt || '—') }}</div>
+      </li>
+    </ol>
+
+    <!-- CONFIRMED：可发起撤销申请 -->
+    <div *ngIf="batch.status === 'CONFIRMED' && !batch.reversal" class="rev-form">
+      <label>撤销原因
+        <input [(ngModel)]="reason" placeholder="账务依据变更说明">
+      </label>
+      <label>申请人
+        <input [(ngModel)]="requestedBy">
+      </label>
+      <button class="danger" [disabled]="busy"
+              (click)="request.emit({ reason: reason, by: requestedBy })">
+        发起撤销申请</button>
+    </div>
+
+    <!-- REVERSAL_PENDING：审批 -->
+    <div *ngIf="batch.status === 'REVERSAL_PENDING'" class="rev-approve">
+      <div class="rev-banner pending">撤销申请审批中，该批次暂不可再申请、不可重复确认。</div>
+      <label>审批人
+        <input [(ngModel)]="approver">
+      </label>
+      <div class="rev-actions">
+        <button [disabled]="busy" (click)="approve.emit(approver)">审批通过并冲正</button>
+      </div>
+      <label>驳回原因
+        <input [(ngModel)]="rejectReason" placeholder="如：账务依据仍然有效">
+      </label>
+      <div class="rev-actions">
+        <button class="secondary" [disabled]="busy"
+                (click)="reject.emit({ by: approver, reason: rejectReason })">驳回申请</button>
+      </div>
+    </div>
+
+    <!-- REVERSED：终态审计，只读 -->
+    <div *ngIf="batch.status === 'REVERSED'" class="rev-done">
+      <div class="rev-banner done">
+        已冲正（不可逆）。本次确认清偿的
+        <b>{{ batch.reversal?.restoredCount }}</b> 张债权已恢复为 ACTIVE，
+        冲正批次
+        <a class="link" (click)="openBatch.emit(batch.reversalBatchId!)">
+          {{ batch.reversalBatchId }}
+        </a>。
+      </div>
+    </div>
+
+    <!-- 申请被驳回 -->
+    <div *ngIf="batch.reversal?.status === 'REJECTED'" class="rev-banner rejected">
+      撤销申请已被驳回（{{ batch.reversal?.rejectedBy }} · {{ batch.reversal?.rejectedAt }}）：
+      {{ batch.reversal?.rejectReason }}。批次维持 CONFIRMED，债权保持 CLEARED。
+    </div>
+
+    <!-- 审计表 -->
+    <table class="audit" *ngIf="batch.reversal">
+      <tbody>
+      <tr><th>撤销申请号</th><td>{{ batch.reversal.id }}</td></tr>
+      <tr><th>状态</th><td>{{ batch.reversal.status }}</td></tr>
+      <tr><th>申请人 / 时间</th><td>{{ batch.reversal.requestedBy }} · {{ batch.reversal.requestedAt }}</td></tr>
+      <tr><th>撤销原因</th><td>{{ batch.reversal.reason || '—' }}</td></tr>
+      <tr><th>审批人 / 时间</th><td>{{ batch.reversal.approvedBy || '—' }} · {{ batch.reversal.approvedAt || '—' }}</td></tr>
+      <tr><th>冲正完成时间</th><td>{{ batch.reversal.processedAt || '—' }}</td></tr>
+      <tr><th>恢复债权张数</th><td>{{ batch.reversal.restoredCount ?? '—' }}</td></tr>
+      <tr><th>关联冲正批次</th><td>
+        <a class="link" *ngIf="batch.reversal.reversalBatchId"
+           (click)="openBatch.emit(batch.reversal.reversalBatchId!)">
+          {{ batch.reversal.reversalBatchId }}
+        </a>
+        <span *ngIf="!batch.reversal.reversalBatchId" class="muted">—</span>
+      </td></tr>
+      </tbody>
+    </table>
+  </ng-container>
+</div>
