@@ -1,0 +1,29 @@
+<div class="panel">
+  <div class="list-head">
+    <h2>清算批次</h2>
+    <button [disabled]="busy" (click)="createTrial.emit()">新建试算（不改动原始债权）</button>
+  </div>
+  <table>
+    <thead>
+    <tr>
+      <th>批次</th><th>状态</th>
+      <th class="num">原始笔数</th><th class="num">清算后笔数</th><th class="num">排除</th>
+      <th>创建时间</th><th>操作人</th>
+    </tr>
+    </thead>
+    <tbody>
+    <tr class="clickable" *ngFor="let b of batches" (click)="open.emit(b.id)">
+      <td><b>{{ b.label }}</b><div class="muted small">{{ b.id }}</div></td>
+      <td><span class="badge" [class.sim]="b.status === 'SIMULATED'"
+                [class.cfm]="b.status === 'CONFIRMED'">
+        {{ b.status === 'SIMULATED' ? '试算' : '已确认' }}</span></td>
+      <td class="num">{{ b.originalClaimCount }}</td>
+      <td class="num pos">{{ b.resultingEntryCount }}</td>
+      <td class="num neg">{{ b.excludedCount }}</td>
+      <td class="small">{{ b.createdAt }}</td>
+      <td class="small">{{ b.createdBy || '—' }}</td>
+    </tr>
+    <tr *ngIf="!batches.length"><td colspan="7" class="muted">暂无批次，点击右上角新建试算</td></tr>
+    </tbody>
+  </table>
+</div>

@@ -1,0 +1,18 @@
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+secrets.json
+
+# Local dependencies, build output, and runtime data
+clearing-app/frontend/node_modules/
+clearing-app/backend/target/
+*.log
+*.pid
+*.sqlite
+*.db

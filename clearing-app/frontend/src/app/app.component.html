@@ -1,0 +1,24 @@
+<div class="app-shell">
+  <header class="topbar">
+    <h1>集团内部债务清算试算平台</h1>
+    <span class="muted small">按互抵协议与币种边界分组 · 排除质押/争议 · 不接入真实银行</span>
+  </header>
+
+  <div class="error-banner" *ngIf="error()">
+    ⚠ {{ error() }}
+    <button class="secondary" (click)="error.set(null)">知道了</button>
+  </div>
+
+  <ng-container *ngIf="!selected(); else detailTpl">
+    <div class="grid layout">
+      <app-batch-list [batches]="batches()" [busy]="busy()"
+        (open)="openBatch($event)" (createTrial)="createTrial()"></app-batch-list>
+      <app-fx-panel [rates]="rates()"></app-fx-panel>
+    </div>
+  </ng-container>
+
+  <ng-template #detailTpl>
+    <app-batch-detail [batch]="selected()!" [busy]="busy()"
+      (confirmed)="confirm($event)" (closed)="closeDetail()"></app-batch-detail>
+  </ng-template>
+</div>

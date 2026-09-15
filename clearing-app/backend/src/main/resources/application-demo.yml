@@ -1,0 +1,14 @@
+spring:
+  # demo profile：无 PostgreSQL 环境下用内存 H2 起完整应用做 HTTP 验收；
+  # 默认（无 profile）仍连 PostgreSQL + Flyway。
+  datasource:
+    url: jdbc:h2:mem:clearing;MODE=PostgreSQL;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    open-in-view: false
+  flyway:
+    enabled: false

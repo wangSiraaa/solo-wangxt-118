@@ -1,0 +1,139 @@
+<div class="panel detail">
+  <div class="detail-head">
+    <div>
+      <h2>{{ batch.label }} <span class="badge" [class.sim]="batch.status === 'SIMULATED'"
+          [class.cfm]="batch.status === 'CONFIRMED'">
+        {{ batch.status === 'SIMULATED' ? '试算方案' : '已确认' }}</span></h2>
+      <div class="muted small">{{ batch.id }} · 创建 {{ batch.createdAt }}
+        · 估值时点 {{ batch.valuationTime }}
+        <ng-container *ngIf="batch.confirmedAt"> · 确认 {{ batch.confirmedAt }}</ng-container>
+        · {{ batch.createdBy || '未署名' }}</div>
+    </div>
+    <div class="head-actions">
+      <button class="secondary" (click)="closed.emit()">返回列表</button>
+      <button *ngIf="batch.status === 'SIMULATED'" [disabled]="busy" (click)="confirm()">
+        确认方案（不发起银行付款）</button>
+    </div>
+  </div>
+
+  <div class="kpi-row">
+    <div class="kpi"><div class="kpi-num">{{ batch.originalClaimCount }}</div><div class="muted small">原始债权笔数</div></div>
+    <div class="kpi"><div class="kpi-num pos">{{ batch.resultingEntryCount }}</div><div class="muted small">清算后指令笔数</div></div>
+    <div class="kpi"><div class="kpi-num neg">{{ batch.excludedCount }}</div><div class="muted small">排除（质押/争议/无协议）</div></div>
+  </div>
+
+  <p class="small muted">模拟付款仅为台账指令；确认动作只把原始债权标记为已清偿并留痕，不接入任何真实银行通道。</p>
+
+  <ng-container *ngFor="let g of batch.groups">
+    <div class="group-block">
+      <h3>清算组 · 协议 {{ g.agreementCode }} · 清算币种 {{ g.clearingCurrency }}
+        <span class="badge muted" *ngIf="g.crossCurrency">跨币种互抵</span>
+        <span class="badge muted" *ngIf="!g.crossCurrency">同币种互抵</span>
+      </h3>
+      <div class="muted small">原始发票 {{ g.claimCount }} 张（{{ g.grossClaimsDisplay }}） →
+        非零净收付 {{ g.netEntryCount }} 笔</div>
+
+      <app-debt-graph [group]="g"
+        (edgeSelected)="onEdgeInvoices($event, g.id)"></app-debt-graph>
+
+      <div class="grid two-col">
+        <div>
+          <h3>各法人净头寸（{{ g.clearingCurrency }}）</h3>
+          <table>
+            <thead><tr><th>法人</th><th class="num">毛应收</th><th class="num">毛应付</th><th class="num">净头寸</th></tr></thead>
+            <tbody>
+            <tr *ngFor="let p of g.positions">
+              <td>{{ p.entityCode }}</td>
+              <td class="num">{{ fmt(p.grossReceivable) }}</td>
+              <td class="num">{{ fmt(p.grossPayable) }}</td>
+              <td class="num" [class.pos]="p.netAmount > 0" [class.neg]="p.netAmount < 0">
+                {{ p.netAmount > 0 ? '+' : '' }}{{ fmt(p.netAmount) }}</td>
+            </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div>
+          <h3>轧差后指令</h3>
+          <table>
+            <thead><tr><th>类型</th><th>付款方</th><th>收款方</th><th class="num">金额</th></tr></thead>
+            <tbody>
+            <tr *ngFor="let e of g.entries">
+              <td><span class="badge" [class.setoff]="e.type === 'SETOFF'"
+                        [class.payment]="e.type === 'NET_PAYMENT'">
+                {{ e.type === 'SETOFF' ? '互抵' : '模拟付款' }}</span></td>
+              <td>{{ e.fromEntity }}</td>
+              <td>{{ e.toEntity }}</td>
+              <td class="num">{{ e.currency }} {{ fmt(e.amount) }}</td>
+            </tr>
+            </tbody>
+          </table>
+          <p class="small muted" *ngFor="let e of g.entries">{{ e.description }}</p>
+        </div>
+      </div>
+
+      <!-- 发票追溯面板：点击债务图上的边后显示 -->
+      <div class="trace-panel" *ngIf="selectedGroupId === g.id && selectedInvoices.length">
+        <h3>被抵销的原始发票（{{ selectedInvoices.length }} 张）</h3>
+        <table>
+          <thead><tr>
+            <th>发票号</th><th>债权人</th><th>债务人</th>
+            <th class="num">原始金额</th><th class="num">折算额({{ g.clearingCurrency }})</th>
+            <th class="num">互抵额</th><th class="num">付款额</th><th class="num">汇率</th>
+          </tr></thead>
+          <tbody>
+          <tr *ngFor="let d of selectedInvoices">
+            <td><b>{{ d.invoiceNo }}</b><div class="muted small">{{ d.receivableId }}</div></td>
+            <td>{{ d.creditorCode }}</td>
+            <td>{{ d.debtorCode }}</td>
+            <td class="num">{{ d.originalCurrency }} {{ fmt(d.originalAmount) }}</td>
+            <td class="num">{{ fmt(d.convertedAmount) }}</td>
+            <td class="num">{{ fmt(d.setoffAmount) }}</td>
+            <td class="num">{{ fmt(d.paymentAmount) }}</td>
+            <td class="num small">{{ d.fxRate === 1 ? '—' : fmt(d.fxRate, 6) }}</td>
+          </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- 跨币种：逐项汇率/时点/尾差 -->
+      <div *ngIf="g.crossCurrency" class="fx-block">
+        <h3>跨币种换算与尾差归属（结算币种 {{ g.clearingCurrency }}）</h3>
+        <table>
+          <thead><tr><th>类型</th><th>归属法人</th><th>关联发票</th>
+            <th class="num">汇率</th><th>汇率时点</th><th class="num">尾差</th><th>说明</th></tr></thead>
+          <tbody>
+          <tr *ngFor="let r of g.rounding">
+            <td>
+              <span class="badge muted" *ngIf="r.lineType === 'FX_CONVERSION'">逐笔换汇尾差</span>
+              <span class="badge setoff" *ngIf="r.lineType === 'BEARER_ADJUST'">承担方归集</span>
+            </td>
+            <td>{{ r.entityCode }}</td>
+            <td>{{ r.refInvoiceNo || '—' }}</td>
+            <td class="num small">{{ r.fxRate ? fmt(r.fxRate, 6) : '—' }}</td>
+            <td class="small">{{ r.rateTime || '—' }}</td>
+            <td class="num" [class.pos]="r.amount > 0" [class.neg]="r.amount < 0">{{ fmt(r.amount, 6) }}</td>
+            <td class="small muted">{{ r.note }}</td>
+          </tr>
+          </tbody>
+        </table>
+        <p class="small muted">尾差为逐张发票按结算币种记账精度 HALF_UP 取整产生，合计为零；
+          由协议指定承担方一笔记入，其他法人净头寸不受影响。</p>
+      </div>
+    </div>
+  </ng-container>
+
+  <div class="excluded-block" *ngIf="batch.excluded.length">
+    <h3>被排除债权（保留原债务，不参与互抵）</h3>
+    <table>
+      <thead><tr><th>发票号</th><th>原因</th><th>说明</th></tr></thead>
+      <tbody>
+      <tr *ngFor="let x of batch.excluded">
+        <td><b>{{ x.invoiceNo }}</b><div class="muted small">{{ x.receivableId }}</div></td>
+        <td><span class="badge excluded">{{ reasonText(x.reason) }}</span></td>
+        <td class="small muted">{{ x.detail }}</td>
+      </tr>
+      </tbody>
+    </table>
+  </div>
+</div>

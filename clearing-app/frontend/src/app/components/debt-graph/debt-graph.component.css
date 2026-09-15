@@ -1,0 +1,28 @@
+.graph-wrap { margin-bottom: 14px; }
+.graph-svg { width: 100%; height: auto; display: block; }
+.legend { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 8px; font-size: 12px; color: var(--muted); }
+.lg { display: inline-block; width: 22px; height: 0; border-top: 3px solid; margin-right: 5px; vertical-align: middle; }
+.lg.gross { border-color: #64748b; }
+.lg.net { border-color: #34d399; }
+.lg.setoff { border-color: #a78bfa; border-top-style: dashed; }
+
+.node { stroke-width: 2.5; }
+.node.receiver { fill: #14432f; stroke: #34d399; }
+.node.payer { fill: #4c2626; stroke: #f87171; }
+.node.flat { fill: var(--panel-2); stroke: #64748b; }
+.node-code { fill: var(--text); font-weight: 700; font-size: 14px; }
+.node-net { fill: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+
+.edge-gross {
+  stroke: #64748b;
+  stroke-width: 3;
+  fill: none;
+  cursor: pointer;
+}
+.edge-gross:hover { stroke: #94a3b8; stroke-width: 4; }
+.edge-gross.selected { stroke: var(--accent); stroke-width: 5; }
+.edge-net { stroke: #34d399; stroke-width: 3.5; fill: none; }
+.edge-label { fill: #cbd5e1; font-size: 11px; font-variant-numeric: tabular-nums; }
+.edge-label.net { fill: #34d399; font-weight: 700; }
+.edge-sub { fill: #a78bfa; }
+.ring-note { fill: #a78bfa; font-size: 13px; font-weight: 600; }

@@ -1,0 +1,32 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: clearing
+      POSTGRES_USER: clearing
+      POSTGRES_PASSWORD: clearing
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U clearing -d clearing"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build: ./backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/clearing
+      DB_USER: clearing
+      DB_PASSWORD: clearing
+      # 演示环境额外打开 demo 播种？不需要——Flyway V2 已写入演示数据。
+    ports:
+      - "8080:8080"
+
+volumes:
+  pgdata:

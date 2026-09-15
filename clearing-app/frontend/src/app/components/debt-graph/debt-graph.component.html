@@ -1,0 +1,69 @@
+<div class="graph-wrap panel">
+  <div class="legend">
+    <span><i class="lg gross"></i> 原始发票债务（点击边追溯发票）</span>
+    <span><i class="lg net"></i> 轧差后净付款</span>
+    <span><i class="lg setoff"></i> 0 金额互抵闭环</span>
+    <span class="muted small">
+      节点：<b class="pos">绿=净收款</b> · <b class="neg">红=净付款</b> · 灰=轧平
+    </span>
+  </div>
+
+  <svg [attr.viewBox]="'0 0 ' + width + ' ' + height" class="graph-svg">
+    <defs>
+      <marker id="arrowGross" viewBox="0 0 10 10" refX="9" refY="5"
+              markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="#64748b"></path>
+      </marker>
+      <marker id="arrowNet" viewBox="0 0 10 10" refX="9" refY="5"
+              markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="#34d399"></path>
+      </marker>
+    </defs>
+
+    <!-- 原始发票债务边 -->
+    <g *ngFor="let e of edges">
+      <path [attr.d]="edgePath(e.from, e.to, bendFor(e))"
+            class="edge-gross"
+            [class.selected]="selectedEdgeId === e.id"
+            [attr.marker-end]="'url(#arrowGross)'"
+            (click)="selectEdge(e)"></path>
+      <text [attr.x]="labelPos(e.from, e.to, bendFor(e)).x"
+            [attr.y]="labelPos(e.from, e.to, bendFor(e)).y"
+            class="edge-label"
+            [class.clickable]="true"
+            (click)="selectEdge(e)"
+            text-anchor="middle">
+        {{ e.currency }} {{ fmt(e.gross) }}
+        <tspan class="edge-sub" *ngIf="e.setoff > 0"> · 互抵 {{ fmt(e.setoff) }}</tspan>
+      </text>
+    </g>
+
+    <!-- 轧差后净付款 / 互抵闭环 -->
+    <g *ngFor="let a of arrows">
+      <ng-container *ngIf="a.type === 'NET_PAYMENT'">
+        <path [attr.d]="edgePath(a.from, a.to, 0)"
+              class="edge-net" [attr.marker-end]="'url(#arrowNet)'"></path>
+        <text [attr.x]="labelPos(a.from, a.to, 0).x"
+              [attr.y]="labelPos(a.from, a.to, 0).y - 16"
+              class="edge-label net" text-anchor="middle">
+          ⇨ {{ a.currency }} {{ fmt(a.amount) }}
+        </text>
+      </ng-container>
+      <text *ngIf="a.type === 'SETOFF' && a.amount === 0"
+            [attr.x]="cx" [attr.y]="cy"
+            class="ring-note" text-anchor="middle">
+        ⊝ 环形债务等额互抵 · 0 笔资金收付
+      </text>
+    </g>
+
+    <!-- 节点 -->
+    <g *ngFor="let n of nodes">
+      <circle [attr.cx]="n.x" [attr.cy]="n.y" r="30"
+              [class]="'node ' + nodeClass(n.net)"></circle>
+      <text [attr.x]="n.x" [attr.y]="n.y - 2" class="node-code" text-anchor="middle">{{ n.code }}</text>
+      <text [attr.x]="n.x" [attr.y]="n.y + 13" class="node-net" text-anchor="middle">
+        {{ n.net === 0 ? '0' : (n.net > 0 ? '+' : '') + fmt(n.net) }}
+      </text>
+    </g>
+  </svg>
+</div>
