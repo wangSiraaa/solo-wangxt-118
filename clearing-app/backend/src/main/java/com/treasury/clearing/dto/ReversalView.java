@@ -1,18 +1,37 @@
 package com.treasury.clearing.dto;
 
-/** 撤销申请视图（完整审计：申请人/审批人/时间/原因/冲正批次/恢复张数）。 */
+import java.util.List;
+
+/** 撤销申请视图（门槛快照 + 完整决议链 + 冲正审计）。 */
 public record ReversalView(String id,
                            String originalBatchId,
                            String reversalBatchId,
                            String status,
+                           int requiredApprovals,
+                           int approvalsReceived,
+                           String thresholdAgreement,
+                           String thresholdAmount,
+                           String grossClearedAmount,
+                           String grossClearedCurrency,
                            String reason,
                            String requestedBy,
                            String requestedAt,
-                           String approvedBy,
-                           String approvedAt,
+                           String finalizedBy,
                            String processedAt,
                            Integer restoredCount,
                            String rejectedBy,
                            String rejectedAt,
-                           String rejectReason) {
+                           String rejectReason,
+                           List<DecisionView> decisions) {
+
+    public record DecisionView(String id,
+                               int seq,
+                               String outcome,
+                               String approver,
+                               String comment,
+                               String decidedAt,
+                               String statusBefore,
+                               String statusAfter,
+                               String reversalBatchId) {
+    }
 }

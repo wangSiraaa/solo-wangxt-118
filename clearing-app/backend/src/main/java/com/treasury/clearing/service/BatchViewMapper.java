@@ -1,15 +1,18 @@
 package com.treasury.clearing.service;
 
 import com.treasury.clearing.domain.ClearingBatch;
+import com.treasury.clearing.domain.ReversalDecision;
 import com.treasury.clearing.domain.ReversalRequest;
 import com.treasury.clearing.dto.BatchView;
 import com.treasury.clearing.dto.ReversalView;
 import com.treasury.clearing.repo.ClearingBatchRepository;
 import com.treasury.clearing.repo.ExcludedClaimRepository;
+import com.treasury.clearing.repo.ReversalDecisionRepository;
 import com.treasury.clearing.repo.ReversalRequestRepository;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.util.Comparator;
 import java.util.List;
 
@@ -20,13 +23,16 @@ public class BatchViewMapper {
     private final ExcludedClaimRepository excludedRepo;
     private final ReversalRequestRepository reversalRepo;
     private final ClearingBatchRepository batchRepo;
+    private final ReversalDecisionRepository decisionRepo;
 
     public BatchViewMapper(ExcludedClaimRepository excludedRepo,
                            ReversalRequestRepository reversalRepo,
-                           ClearingBatchRepository batchRepo) {
+                           ClearingBatchRepository batchRepo,
+                           ReversalDecisionRepository decisionRepo) {
         this.excludedRepo = excludedRepo;
         this.reversalRepo = reversalRepo;
         this.batchRepo = batchRepo;
+        this.decisionRepo = decisionRepo;
     }
 
     /** 按 id 在事务内重新加载后装配，避免调用方传入脱管实体导致懒加载失败。 */
@@ -97,12 +103,26 @@ public class BatchViewMapper {
     }
 
     private ReversalView toReversalView(ReversalRequest r) {
+        List<ReversalView.DecisionView> decisions =
+                decisionRepo.listByRequest(r.getId()).stream()
+                        .sorted(Comparator.comparingInt(ReversalDecision::getSeq))
+                        .map(d -> new ReversalView.DecisionView(
+                                d.getId(), d.getSeq(), d.getOutcome().name(),
+                                d.getApprover(), d.getComment(), ts(d.getDecidedAt()),
+                                d.getStatusBefore().name(), d.getStatusAfter().name(),
+                                d.getReversalBatchId()))
+                        .toList();
         return new ReversalView(r.getId(), r.getOriginalBatchId(), r.getReversalBatchId(),
-                r.getStatus().name(), r.getReason(),
-                r.getRequestedBy(), ts(r.getRequestedAt()),
-                r.getApprovedBy(), ts(r.getApprovedAt()),
-                ts(r.getProcessedAt()), r.getRestoredCount(),
-                r.getRejectedBy(), ts(r.getRejectedAt()), r.getRejectReason());
+                r.getStatus().name(), r.getRequiredApprovals(), r.getApprovalsReceived(),
+                r.getThresholdAgreement(), money(r.getThresholdAmount()),
+                money(r.getGrossClearedAmount()), r.getGrossClearedCurrency(),
+                r.getReason(), r.getRequestedBy(), ts(r.getRequestedAt()),
+                r.getFinalizedBy(), ts(r.getProcessedAt()), r.getRestoredCount(),
+                r.getRejectedBy(), ts(r.getRejectedAt()), r.getRejectReason(), decisions);
+    }
+
+    private static String money(BigDecimal v) {
+        return v != null ? v.stripTrailingZeros().toPlainString() : null;
     }
 
     private static String ts(java.time.Instant t) {

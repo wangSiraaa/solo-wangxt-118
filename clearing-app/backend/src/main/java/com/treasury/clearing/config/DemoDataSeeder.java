@@ -50,11 +50,11 @@ public class DemoDataSeeder {
             entities.save(new LegalEntity("TREASURY", "集团资金部(尾差过渡户)"));
 
             agreements.save(new NettingAgreement("NA-MULTI", "集团内部同币种多边互抵协议",
-                    false, null, null));
+                    false, null, null, new BigDecimal("100000.000000")));
             agreements.save(new NettingAgreement("NA-XCCY", "集团跨币种互抵协议",
-                    true, "USD", "F"));
+                    true, "USD", "F", new BigDecimal("1000000.000000")));
             agreements.save(new NettingAgreement("NA-LIMITED", "受限互抵协议(仅同币种)",
-                    false, null, null));
+                    false, null, null, null));
 
             for (String e : new String[]{"A", "B", "C"}) {
                 parties.save(new AgreementParty("NA-MULTI", e));

@@ -16,8 +16,9 @@ export class BatchDetailComponent {
   @Input() busy = false;
   @Output() confirmed = new EventEmitter<string>();
   @Output() reversalRequested = new EventEmitter<{ reason: string; by: string }>();
-  @Output() reversalApproved = new EventEmitter<string>();
-  @Output() reversalRejected = new EventEmitter<{ by: string; reason: string }>();
+  @Output() reversalDecision = new EventEmitter<
+    { approver: string; comment: string; outcome: 'APPROVE' | 'REJECT' }
+  >();
   @Output() openBatch = new EventEmitter<string>();
   @Output() closed = new EventEmitter<void>();
 

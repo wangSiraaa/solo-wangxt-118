@@ -29,12 +29,17 @@ export class ClearingApi {
   }
 
   approveReversal(id: string, approvedBy: string): Observable<BatchView> {
-    return this.http.post<BatchView>(`/api/batches/${id}/reversal/approve`, { approvedBy });
+    return this.submitDecision(id, approvedBy, '同意', 'APPROVE');
   }
 
-  rejectReversal(id: string, approvedBy: string, reason: string): Observable<ReversalView> {
-    return this.http.post<ReversalView>(`/api/batches/${id}/reversal/reject`,
-      { approvedBy, reason });
+  rejectReversal(id: string, approvedBy: string, reason: string): Observable<BatchView> {
+    return this.submitDecision(id, approvedBy, reason, 'REJECT');
+  }
+
+  submitDecision(id: string, approver: string, comment: string,
+                 outcome: 'APPROVE' | 'REJECT'): Observable<BatchView> {
+    return this.http.post<BatchView>(`/api/batches/${id}/reversal/decision`,
+      { approver, comment, outcome });
   }
 
   receivables(): Observable<ReceivableView[]> {

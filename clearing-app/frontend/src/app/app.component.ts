@@ -85,34 +85,21 @@ export class AppComponent implements OnInit {
     });
   }
 
-  approveReversal(approver: string): void {
+  submitReversalDecision(payload: { approver: string; comment: string; outcome: 'APPROVE' | 'REJECT' }): void {
     const cur = this.selected();
     if (!cur) { return; }
     this.busy.set(true);
     this.error.set(null);
-    this.api.approveReversal(cur.id, approver).subscribe({
-      // 审批通过返回的是冲正批次；再刷新到原批次以展示 REVERSED 与关联
-      next: () => {
-        this.busy.set(false);
-        this.api.listBatches().subscribe(list => this.batches.set(list));
-        this.reload(cur.id);
-      },
-      error: e => this.fail(e, '冲正失败')
-    });
-  }
-
-  rejectReversal(payload: { by: string; reason: string }): void {
-    const cur = this.selected();
-    if (!cur) { return; }
-    this.busy.set(true);
-    this.error.set(null);
-    this.api.rejectReversal(cur.id, payload.by, payload.reason).subscribe({
-      next: () => {
-        this.busy.set(false);
-        this.reload(cur.id);
-      },
-      error: e => this.fail(e, '驳回失败')
-    });
+    // 决议末票凑满门槛时后端在同事务生成冲正批次并返回它；否则返回原批次最新视图。
+    this.api.submitDecision(cur.id, payload.approver, payload.comment, payload.outcome)
+      .subscribe({
+        next: () => {
+          this.busy.set(false);
+          this.api.listBatches().subscribe(list => this.batches.set(list));
+          this.reload(cur.id);
+        },
+        error: e => this.fail(e, payload.outcome === 'APPROVE' ? '审批失败' : '驳回失败')
+      });
   }
 
   private reload(id: string): void {

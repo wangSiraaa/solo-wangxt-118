@@ -140,8 +140,7 @@
   <app-reversal-panel *ngIf="batch.kind === 'NETTING' && batch.status !== 'SIMULATED'"
     [batch]="batch" [busy]="busy"
     (request)="reversalRequested.emit($event)"
-    (approve)="reversalApproved.emit($event)"
-    (reject)="reversalRejected.emit($event)"
+    (decision)="reversalDecision.emit($event)"
     (openBatch)="openBatch.emit($event)"></app-reversal-panel>
 
   <div class="excluded-block" *ngIf="batch.excluded.length">

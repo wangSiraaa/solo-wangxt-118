@@ -27,3 +27,6 @@ label { display: flex; flex-direction: column; gap: 4px; color: var(--muted); fo
 table.audit { margin-top: 12px; max-width: 640px; }
 table.audit th { width: 150px; color: var(--muted); font-weight: 500; }
 table.audit th, table.audit td { vertical-align: top; }
+
+.decision-chain { margin: 10px 0; font-size: 12px; }
+.decision-chain th, .decision-chain td { padding: 6px; }

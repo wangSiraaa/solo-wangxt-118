@@ -1,6 +1,7 @@
 export type BatchStatus = 'SIMULATED' | 'CONFIRMED' | 'REVERSAL_PENDING' | 'REVERSED';
 export type BatchKind = 'NETTING' | 'REVERSAL';
-export type ReversalStatus = 'REQUESTED' | 'PROCESSED' | 'REJECTED';
+export type ReversalStatus = 'REQUESTED' | 'PARTIALLY_APPROVED' | 'PROCESSED' | 'REJECTED';
+export type DecisionOutcome = 'APPROVE' | 'REJECT';
 
 export interface BatchSummary {
   id: string;
@@ -18,21 +19,39 @@ export interface BatchSummary {
   createdBy: string | null;
 }
 
+export interface ReversalDecisionView {
+  id: string;
+  seq: number;
+  outcome: DecisionOutcome;
+  approver: string;
+  comment: string | null;
+  decidedAt: string;
+  statusBefore: ReversalStatus;
+  statusAfter: ReversalStatus;
+  reversalBatchId: string | null;
+}
+
 export interface ReversalView {
   id: string;
   originalBatchId: string;
   reversalBatchId: string | null;
   status: ReversalStatus;
+  requiredApprovals: number;
+  approvalsReceived: number;
+  thresholdAgreement: string | null;
+  thresholdAmount: string | null;
+  grossClearedAmount: string | null;
+  grossClearedCurrency: string | null;
   reason: string | null;
   requestedBy: string | null;
   requestedAt: string;
-  approvedBy: string | null;
-  approvedAt: string | null;
+  finalizedBy: string | null;
   processedAt: string | null;
   restoredCount: number | null;
   rejectedBy: string | null;
   rejectedAt: string | null;
   rejectReason: string | null;
+  decisions: ReversalDecisionView[];
 }
 export interface DischargeView {
   receivableId: string;

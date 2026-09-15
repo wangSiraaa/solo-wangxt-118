@@ -28,34 +28,35 @@
 
 ## 1.5 撤销与冲正确认后账务依据变更时使用
 
-**不可逆审计，不删改原方案。** 流程是“申请 → 审批 → 冲正”两段式：
+**分级四眼审批。** 流程是“申请 → 一条或多条不可改审批决议 → 凑满名额才冲正”：
 
 ```
-CONFIRMED ──发起撤销申请──▶ REVERSAL_PENDING ──审批通过──▶ REVERSED（终态）
-     ▲                            │
-     └──────── 审批驳回 ──────────┘
+CONFIRMED ──发起撤销申请──▶ REVERSAL_PENDING ──决议凑满名额──▶ REVERSED（终态）
+                                   │ REQUESTED
+                                   ├─ 首审通过 → PARTIALLY_APPROVED（双审时等待第二人）
+                                   └─ 任一决议驳回 → REJECTED，批次回 CONFIRMED（终态）
 ```
 
-- **原确认批次永不修改金额**：其估值时点、净头寸、指令、逐发票清偿明细、操作者全部保留可追溯；
-  冲正通过**新增**一条 `kind=REVERSAL` 的冲正批次表达，两者双向关联
-  （原批次 `reversal_batch_id`、冲正批次 `reverses_batch_id`）。
-- 冲正批次镜像原方案：净头寸取反、毛应收/应付交换、指令方向交换（冲回原资金效果）、尾差行取反，
-  并沿用原估值时点；本次确认实际清偿的债权由 `CLEARED` 恢复为 `ACTIVE`。
-- 撤销申请单独落 `reversal_request`（申请人/审批人/时间/原因/恢复张数/冲正批次），审批中可驳回。
+- **一审/双审门槛**：协议配置 `dual_approval_threshold`（清算币种总清偿额阈值）。发起撤销时按原确认批次
+  各清算组“实际清偿额 ≥ 协议门槛”逐组比较，取最高名额并快照到申请：达到门槛为**双审（四眼，2 票）**，
+  否则**一审（1 票）**；门槛为空始终一审。演示数据中 `NA-MULTI` 阈值 10 万（该批次清偿 325 万 → 双审），
+  `NA-XCCY` 阈值 100 万（清偿额很小 → 一审）。
+- **不可修改决议链**：每次审批只新增一行 `reversal_decision`，记录审批人、意见、时间、
+  **审批前后状态**、关联撤销申请与（末审的）冲正批次；同一申请下审批人唯一。
+- **四眼规则**：申请人不得是任何审批人（自审 409）；同一审批人重复提交 409，不重复占用名额；
+  乱序/终态后再决议、驳回后再批准均 409，决议数不增加、债权不动。
+- **名额凑满才冲正**：只有最后一票把 `approvalsReceived` 推到 `requiredApprovals` 时，才在**同一事务**
+  生成唯一冲正批次、恢复债权、原批次置 `REVERSED`；中途通过只把申请推进到 `PARTIALLY_APPROVED`，
+  不生成冲正、不动债权。
+- **并发与重启**：申请行/决议行/批次行/债权行加排他锁并带乐观锁，
+  `(request_id, approver)` 唯一索引兜底。两个审批人并发抢最后一票只有一人成功，其余 409；
+  首审决议独立提交，之后服务失败或 `kill -9` 重启，重放同一审批人返回 409（不重复占名额），
+  由第二审批人安全续审；末审“决议+冲正+恢复”同生共死，失败整体回滚、重试不重复冲正。
+- 原确认批次的金额、估值时点、指令、逐发票清偿、操作者及**完整决议链**全部保留；冲正批次镜像原方案、
+  双向关联且本身不可再撤销。质押/争议/无协议债权自始至终保持 `ACTIVE`。
 
-**并发、重复与重启的一致性保证：**
-
-- 批次、撤销申请、债权三张表都有 `@Version` 乐观锁；撤销申请/审批对批次行、申请行、相关债权行加
-  排他锁（`PESSIMISTIC_WRITE`）串行化；`reversal_request.original_batch_id` 唯一约束兜底。
-- 同一确认批次最多一条申请、最多一条冲正批次、债权最多恢复一次：
-  重复申请、重复/并发审批、待审批时再次确认，均返回 **409** 且不改动债权。
-- 审批是单事务原子操作：构建冲正批次、恢复债权、原批次置 `REVERSED`、回填申请同进同退。
-  处理中途失败或服务 `kill -9` 重启后，申请仍为 `REQUESTED`、无冲正批次落地，可安全重试；
-  已完成阶段通过 `PROCESSED` 去重，重试只返回 409 而不会再生成冲正或重复恢复。
-- 冲正批次本身不可再撤销；质押/争议/无协议债权自始至终保持 `ACTIVE`。
-
-前端批次详情页有撤销进度条（已确认 → 撤销申请 → 审批冲正）、发起/审批/驳回表单、原批次↔冲正批次
-跳转链接与只读审计表；冲正批次会明确标注“冲正批次”。
+前端批次详情页展示门槛快照与“已获 N/M 票”、决议链表（序号/结论/审批人/意见/时间/前后状态）、
+末审按钮文案（“提交末审并冲正”）、原批次↔冲正批次跳转与只读审计。
 
 ---
 
@@ -109,10 +110,9 @@ clearing-app/
 |---|---|
 | `POST /api/batches/trial` | 试算（请求体可带 `valuationTime`，**缺省=当前时刻**），**不动原始债权** |
 | `POST /api/batches/{id}/confirm` | 确认试算方案；沿用试算的估值时点重新计算，发票转 `CLEARED` |
-| `POST /api/batches/{id}/reversal-request` | 仅对 `CONFIRMED` 的普通批次发起撤销申请（原因 + 申请人），批次转 `REVERSAL_PENDING` |
-| `POST /api/batches/{id}/reversal/approve` | 审批通过：生成一条 `kind=REVERSAL` 冲正批次，恢复本次确认清偿的债权，原批次转 `REVERSED` |
-| `POST /api/batches/{id}/reversal/reject` | 审批驳回：申请 `REJECTED`，原批次回到 `CONFIRMED`，债权不动 |
-| `GET /api/batches/{id}/reversal` | 撤销申请审计视图（申请/审批人、时间、原因、冲正批次、恢复张数） |
+| `POST /api/batches/{id}/reversal-request` | 仅对 `CONFIRMED` 的普通批次发起撤销申请，按协议门槛快照一审/双审名额，批次转 `REVERSAL_PENDING` |
+| `POST /api/batches/{id}/reversal/decision` | 提交一条不可变四眼审批决议 `{approver, comment, outcome: APPROVE|REJECT}`；凑满名额才在同事务冲正 |
+| `GET /api/batches/{id}/reversal` | 撤销申请、门槛快照与完整决议链审计视图 |
 | `GET /api/batches` / `GET /api/batches/{id}` | 批次列表 / 完整明细（组、头寸、指令、发票清偿、尾差、排除） |
 | `GET /api/receivables` | 原始债权只读视图 |
 | `GET|POST /api/fx-rates` | 资金部手工维护内部记账汇率（币种对、汇率、时点、来源） |
@@ -156,9 +156,10 @@ npm start          # http://localhost:4200，通过 proxy.conf.json 代理到 :8
 ### 4.4 测试与验收
 
 ```bash
-cd backend && mvn test                 # 15 个测试：引擎单测 + 服务级集成 + 全量守恒 + 撤销/并发/回滚
-bash scripts/acceptance.sh             # 黑盒 HTTP 验收：清算缩减/原债务保留（需先启动实例）
-bash scripts/acceptance-reversal.sh    # 黑盒 HTTP 验收：撤销申请/审批/重复冲突/债权恢复/回归
+cd backend && mvn test                 # 18 个测试：引擎 + 服务集成 + 守恒 + 四眼/并发/回滚
+bash scripts/acceptance.sh             # 黑盒：清算缩减/原债务保留
+bash scripts/acceptance-four-eyes.sh   # 黑盒：四眼门槛/自审/重复/并发抢名额/唯一冲正/债权恢复
+bash scripts/acceptance-reversal.sh    # 黑盒：一审通过后二审驳回的终态与决议链
 ```
 
 ---

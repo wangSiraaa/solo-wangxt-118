@@ -23,8 +23,7 @@
     <app-batch-detail [batch]="selected()!" [busy]="busy()"
       (confirmed)="confirm($event)"
       (reversalRequested)="requestReversal($event)"
-      (reversalApproved)="approveReversal($event)"
-      (reversalRejected)="rejectReversal($event)"
+      (reversalDecision)="submitReversalDecision($event)"
       (openBatch)="openBatch($event)"
       (closed)="closeDetail()"></app-batch-detail>
   </ng-template>

@@ -11,14 +11,18 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 
 /**
- * 撤销申请（审计主记录）。
+ * 撤销申请（分级四眼审批的审计主记录）。
  *
- * <p>对某条 CONFIRMED 批次最多存在一条申请：{@code reversal_request} 上对
- * {@code original_batch_id} 有唯一约束，配合批次乐观锁，保证重复申请/并发只能成功一次。
- * 申请、审批、冲正批次生成与债权恢复的操作人与时间点全部留痕，且不可删除。
+ * <p>所需审批名额 {@code requiredApprovals} 在发起申请时按原确认批次实际清偿额与协议门槛
+ * 一次性快照：1 = 一审，2 = 双审。门槛为分组（协议+清算币种）级阈值，取所有组中的最大值。
+ *
+ * <p>对某条 CONFIRMED 批次最多一条申请（{@code reversal_request.original_batch_id} 唯一）。
+ * 审批通过不可变决议 {@link ReversalDecision} 累计；只有 {@code approvalsReceived ==
+ * requiredApprovals} 时才在同一事务生成冲正批次、恢复债权、置 PROCESSED。
  */
 @Entity
 @Table(name = "reversal_request")
@@ -32,13 +36,36 @@ public class ReversalRequest {
     @JoinColumn(name = "original_batch_id")
     private ClearingBatch originalBatch;
 
-    /** 冲正批次（PROCESSED 后回填，幂等处理的去重依据）。 */
+    /** 冲正批次（PROCESSED 后回填，幂等去重依据）。 */
     @Column(name = "reversal_batch_id", length = 40)
     private String reversalBatchId;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 16)
+    @Column(nullable = false, length = 20)
     private ReversalStatus status;
+
+    /** 需要的审批名额：1 一审，2 双审（四眼）。 */
+    @Column(name = "required_approvals", nullable = false)
+    private int requiredApprovals;
+
+    /** 已收到的通过决议数。 */
+    @Column(name = "approvals_received", nullable = false)
+    private int approvalsReceived;
+
+    /** 触发最高档门槛的协议（快照，展示用）。 */
+    @Column(name = "threshold_agreement", length = 32)
+    private String thresholdAgreement;
+
+    /** 门槛金额（快照）。 */
+    @Column(name = "threshold_amount", precision = 20, scale = 6)
+    private BigDecimal thresholdAmount;
+
+    /** 门槛比较所用的最高组清偿额（快照）。 */
+    @Column(name = "gross_cleared_amount", precision = 20, scale = 6)
+    private BigDecimal grossClearedAmount;
+
+    @Column(name = "gross_cleared_currency", length = 3)
+    private String grossClearedCurrency;
 
     @Column(length = 512)
     private String reason;
@@ -49,13 +76,10 @@ public class ReversalRequest {
     @Column(name = "requested_at", nullable = false)
     private Instant requestedAt;
 
-    @Column(name = "approved_by", length = 64)
-    private String approvedBy;
+    /** 最终完成/驳回动作的操作人。 */
+    @Column(name = "finalized_by", length = 64)
+    private String finalizedBy;
 
-    @Column(name = "approved_at")
-    private Instant approvedAt;
-
-    /** 冲正处理完成时间（与 approvedAt 同事务，单列以便语义清晰）。 */
     @Column(name = "processed_at")
     private Instant processedAt;
 
@@ -78,14 +102,23 @@ public class ReversalRequest {
     protected ReversalRequest() {
     }
 
-    public ReversalRequest(String id, ClearingBatch originalBatch, ReversalStatus status,
-                           String reason, String requestedBy, Instant requestedAt) {
+    public ReversalRequest(String id, ClearingBatch originalBatch, String reason,
+                           String requestedBy, Instant requestedAt,
+                           int requiredApprovals, String thresholdAgreement,
+                           BigDecimal thresholdAmount, BigDecimal grossClearedAmount,
+                           String grossClearedCurrency) {
         this.id = id;
         this.originalBatch = originalBatch;
-        this.status = status;
         this.reason = reason;
         this.requestedBy = requestedBy;
         this.requestedAt = requestedAt;
+        this.requiredApprovals = requiredApprovals;
+        this.approvalsReceived = 0;
+        this.status = ReversalStatus.REQUESTED;
+        this.thresholdAgreement = thresholdAgreement;
+        this.thresholdAmount = thresholdAmount;
+        this.grossClearedAmount = grossClearedAmount;
+        this.grossClearedCurrency = grossClearedCurrency;
     }
 
     public String getId() {
@@ -112,6 +145,30 @@ public class ReversalRequest {
         return status;
     }
 
+    public int getRequiredApprovals() {
+        return requiredApprovals;
+    }
+
+    public int getApprovalsReceived() {
+        return approvalsReceived;
+    }
+
+    public String getThresholdAgreement() {
+        return thresholdAgreement;
+    }
+
+    public BigDecimal getThresholdAmount() {
+        return thresholdAmount;
+    }
+
+    public BigDecimal getGrossClearedAmount() {
+        return grossClearedAmount;
+    }
+
+    public String getGrossClearedCurrency() {
+        return grossClearedCurrency;
+    }
+
     public String getReason() {
         return reason;
     }
@@ -124,12 +181,8 @@ public class ReversalRequest {
         return requestedAt;
     }
 
-    public String getApprovedBy() {
-        return approvedBy;
-    }
-
-    public Instant getApprovedAt() {
-        return approvedAt;
+    public String getFinalizedBy() {
+        return finalizedBy;
     }
 
     public Instant getProcessedAt() {
@@ -152,28 +205,38 @@ public class ReversalRequest {
         return rejectReason;
     }
 
-    public void approve(String by, Instant at) {
-        if (this.status != ReversalStatus.REQUESTED) {
-            throw new ConflictException("撤销申请已处理，当前状态: " + this.status);
+    /** 记录一条通过决议后的新状态；返回是否已凑满名额（调用方据此触发冲正）。 */
+    public boolean recordApproval() {
+        if (this.status == ReversalStatus.PROCESSED || this.status == ReversalStatus.REJECTED) {
+            throw new ConflictException("撤销申请已终态（" + this.status + "），不能再审批");
         }
-        this.approvedBy = by;
-        this.approvedAt = at;
+        this.approvalsReceived++;
+        this.status = approvalsReceived >= requiredApprovals
+                ? ReversalStatus.PROCESSED
+                : ReversalStatus.PARTIALLY_APPROVED;
+        return this.status == ReversalStatus.PROCESSED;
     }
 
-    public void markProcessed(String reversalBatchId, int restoredCount, Instant at) {
+    public void markProcessed(String reversalBatchId, int restoredCount, String by, Instant at) {
+        // 末审决议本身也是一票：在已有计数上补齐到所需名额（不依赖外部先 recordApproval）。
+        if (this.approvalsReceived < this.requiredApprovals) {
+            this.approvalsReceived = this.requiredApprovals;
+        }
         this.status = ReversalStatus.PROCESSED;
         this.reversalBatchId = reversalBatchId;
         this.restoredCount = restoredCount;
         this.processedAt = at;
+        this.finalizedBy = by;
     }
 
     public void reject(String by, Instant at, String reason) {
-        if (this.status != ReversalStatus.REQUESTED) {
-            throw new ConflictException("撤销申请已处理，当前状态: " + this.status);
+        if (this.status == ReversalStatus.PROCESSED || this.status == ReversalStatus.REJECTED) {
+            throw new ConflictException("撤销申请已终态（" + this.status + "），不能驳回");
         }
         this.status = ReversalStatus.REJECTED;
         this.rejectedBy = by;
         this.rejectedAt = at;
         this.rejectReason = reason;
+        this.finalizedBy = by;
     }
 }

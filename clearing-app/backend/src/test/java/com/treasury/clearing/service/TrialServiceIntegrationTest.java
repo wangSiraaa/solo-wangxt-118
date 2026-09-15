@@ -39,12 +39,14 @@ class TrialServiceIntegrationTest {
     @Autowired private ClearingBatchRepository batchRepo;
     @Autowired private ExcludedClaimRepository excludedRepo;
     @Autowired private com.treasury.clearing.repo.ReversalRequestRepository requestRepo;
+    @Autowired private com.treasury.clearing.repo.ReversalDecisionRepository decisionRepo;
     @Autowired private TrialService trialService;
     @Autowired private NettingEngine engine;
 
     @BeforeEach
     void setUp() {
         excludedRepo.deleteAll();
+        decisionRepo.deleteAll();
         requestRepo.deleteAll();
         batchRepo.deleteAll();
         receivableRepo.deleteAll();

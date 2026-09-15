@@ -41,10 +41,12 @@ class BalanceConservationIntegrationTest {
     @Autowired private AgreementPartyRepository partyRepo;
     @Autowired private FxRateRepository fxRepo;
     @Autowired private com.treasury.clearing.repo.ReversalRequestRepository requestRepo;
+    @Autowired private com.treasury.clearing.repo.ReversalDecisionRepository decisionRepo;
 
     @BeforeEach
     void seed() {
         excludedRepo.deleteAll();
+        decisionRepo.deleteAll();
         requestRepo.deleteAll();
         batchRepo.deleteAll();
         receivableRepo.deleteAll();

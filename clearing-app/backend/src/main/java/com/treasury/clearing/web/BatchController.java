@@ -1,6 +1,7 @@
 package com.treasury.clearing.web;
 
 import com.treasury.clearing.domain.ClearingBatch;
+import com.treasury.clearing.domain.ReversalDecision;
 import com.treasury.clearing.domain.ReversalRequest;
 import com.treasury.clearing.dto.BatchView;
 import com.treasury.clearing.dto.ReversalView;
@@ -22,12 +23,11 @@ import java.util.List;
 
 /**
  * 清算批次 API。
- * POST /api/batches/trial         试算（不动任何原始债权）
- * POST /api/batches/{id}/confirm  确认试算方案（重新按当前数据计算并生效）
- * POST /api/batches/{id}/reversal-request  对 CONFIRMED 批次发起撤销申请
- * POST /api/batches/{id}/reversal/approve  审批通过 → 生成冲正批次、恢复债权
- * POST /api/batches/{id}/reversal/reject   审批驳回 → 原批次回到 CONFIRMED
- * GET  /api/batches/{id}/reversal          撤销申请审计视图
+ * POST /api/batches/trial            试算（不动任何原始债权）
+ * POST /api/batches/{id}/confirm     确认试算方案
+ * POST /api/batches/{id}/reversal-request        对 CONFIRMED 批次发起撤销申请
+ * POST /api/batches/{id}/reversal/decision       提交一条四眼审批决议（APPROVE/REJECT）
+ * GET  /api/batches/{id}/reversal                撤销申请 + 完整决议链审计
  * 明确不提供任何银行划款接口。
  */
 @RestController
@@ -88,44 +88,32 @@ public class BatchController {
         String reason = body != null ? body.reason() : null;
         String by = body != null ? body.requestedBy() : null;
         ReversalRequest request = reversalService.requestReversal(id, reason, by);
-        return ResponseEntity.status(HttpStatus.CREATED).body(toReversalView(request));
+        return ResponseEntity.status(HttpStatus.CREATED).body(mapper.toViewById(id).reversal());
     }
 
-    @PostMapping("/{id}/reversal/approve")
-    public ResponseEntity<BatchView> approve(@PathVariable String id,
-                                             @RequestBody(required = false)
-                                             ReversalDecisionBody body) {
-        String by = body != null ? body.approvedBy() : null;
-        ClearingBatch reversalBatch = reversalService.approveReversal(id, by);
-        return ResponseEntity.status(HttpStatus.CREATED).body(mapper.toView(reversalBatch));
-    }
-
-    @PostMapping("/{id}/reversal/reject")
-    public ResponseEntity<ReversalView> reject(@PathVariable String id,
-                                               @RequestBody(required = false)
-                                               ReversalDecisionBody body) {
-        String by = body != null ? body.approvedBy() : null;
-        String reason = body != null ? body.reason() : null;
-        ReversalRequest request = reversalService.rejectReversal(id, by, reason);
-        return ResponseEntity.ok(toReversalView(request));
+    /** 分级四眼：提交一条不可变审批决议；凑满门槛名额才在同事务冲正。 */
+    @PostMapping("/{id}/reversal/decision")
+    public ResponseEntity<BatchView> decision(@PathVariable String id,
+                                              @RequestBody(required = false) DecisionBody body) {
+        ReversalDecision.Outcome outcome = body != null && body.outcome() != null
+                ? ReversalDecision.Outcome.valueOf(body.outcome())
+                : null;
+        String approver = body != null ? body.approver() : null;
+        String comment = body != null ? body.comment() : null;
+        reversalService.decide(id, approver, comment, outcome);
+        // 审批通过且凑满名额返回冲正批次；中途通过/驳回返回原批次最新视图
+        BatchView origin = mapper.toViewById(id);
+        if (origin.reversal() != null && origin.reversal().reversalBatchId() != null) {
+            return ResponseEntity.status(HttpStatus.CREATED)
+                    .body(mapper.toViewById(origin.reversal().reversalBatchId()));
+        }
+        return ResponseEntity.ok(origin);
     }
 
     @GetMapping("/{id}/reversal")
     public ReversalView reversal(@PathVariable String id) {
-        return toReversalView(reversalService.getRequestForBatch(id));
-    }
-
-    private ReversalView toReversalView(ReversalRequest r) {
-        return new ReversalView(r.getId(), r.getOriginalBatchId(), r.getReversalBatchId(),
-                r.getStatus().name(), r.getReason(),
-                r.getRequestedBy(), ts(r.getRequestedAt()),
-                r.getApprovedBy(), ts(r.getApprovedAt()),
-                ts(r.getProcessedAt()), r.getRestoredCount(),
-                r.getRejectedBy(), ts(r.getRejectedAt()), r.getRejectReason());
-    }
-
-    private static String ts(java.time.Instant t) {
-        return t != null ? t.toString() : null;
+        reversalService.getRequestForBatch(id);
+        return mapper.toViewById(id).reversal();
     }
 
     public record BatchSummaryView(String id, long version, String label, String status,
@@ -141,6 +129,6 @@ public class BatchController {
     public record ReversalRequestBody(String reason, String requestedBy) {
     }
 
-    public record ReversalDecisionBody(String approvedBy, String reason) {
+    public record DecisionBody(String approver, String comment, String outcome) {
     }
 }
