@@ -63,6 +63,7 @@ public class TrialService {
     private final ClearingBatchRepository batchRepo;
     private final ExcludedClaimRepository excludedRepo;
     private final NettingEngine engine;
+    private final org.springframework.beans.factory.ObjectProvider<ClosingService> closingServiceProvider;
 
     public TrialService(ReceivableRepository receivableRepo,
                         NettingAgreementRepository agreementRepo,
@@ -70,7 +71,8 @@ public class TrialService {
                         FxRateRepository fxRepo,
                         ClearingBatchRepository batchRepo,
                         ExcludedClaimRepository excludedRepo,
-                        NettingEngine engine) {
+                        NettingEngine engine,
+                        org.springframework.beans.factory.ObjectProvider<ClosingService> closingServiceProvider) {
         this.receivableRepo = receivableRepo;
         this.agreementRepo = agreementRepo;
         this.partyRepo = partyRepo;
@@ -78,6 +80,7 @@ public class TrialService {
         this.batchRepo = batchRepo;
         this.excludedRepo = excludedRepo;
         this.engine = engine;
+        this.closingServiceProvider = closingServiceProvider;
     }
 
     @Transactional
@@ -190,8 +193,11 @@ public class TrialService {
                 }
                 r.markCleared();
             }
+            Instant confirmedAt = Instant.now();
+            // 已关账日期禁止继续确认
+            closingServiceProvider.getObject().assertDateNotClosed(confirmedAt, "确认清算方案");
             receivableRepo.saveAll(locked);
-            saved.confirm(Instant.now());
+            saved.confirm(confirmedAt);
         }
         return saved;
     }

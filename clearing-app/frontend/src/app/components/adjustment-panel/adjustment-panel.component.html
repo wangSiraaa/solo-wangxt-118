@@ -65,7 +65,7 @@
         <thead><tr>
           <th>#</th><th>发票</th><th>更正项</th>
           <th class="num">旧金额</th><th class="num">新金额</th>
-          <th>协议</th><th class="num">旧折算</th><th class="num">新折算</th><th class="num">差额({{ a.events[0]?.clearingCurrency }})</th>
+          <th>协议</th><th class="num">旧折算</th><th class="num">新折算</th><th class="num">差额({{ a.events.length ? a.events[0].clearingCurrency : '' }})</th>
           <th>生效范围</th><th>原因</th>
         </tr></thead>
         <tbody>

@@ -4,7 +4,7 @@ spring:
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/clearing}
     username: ${DB_USER:clearing}
-    password: ${DB_PASSWORD:clearing}
+    password: ${DB_PASSWORD:}
   jpa:
     hibernate:
       ddl-auto: validate

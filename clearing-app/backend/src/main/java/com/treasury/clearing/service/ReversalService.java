@@ -62,23 +62,31 @@ public class ReversalService {
     private final ReceivableRepository receivableRepo;
     private final NettingAgreementRepository agreementRepo;
     private final AdjustmentRequestRepository adjustmentRequestRepo;
+    private final org.springframework.beans.factory.ObjectProvider<ClosingService> closingServiceProvider;
 
     public ReversalService(ClearingBatchRepository batchRepo,
                            ReversalRequestRepository requestRepo,
                            ReversalDecisionRepository decisionRepo,
                            ReceivableRepository receivableRepo,
                            NettingAgreementRepository agreementRepo,
-                           AdjustmentRequestRepository adjustmentRequestRepo) {
+                           AdjustmentRequestRepository adjustmentRequestRepo,
+                           org.springframework.beans.factory.ObjectProvider<ClosingService> closingServiceProvider) {
         this.batchRepo = batchRepo;
         this.requestRepo = requestRepo;
         this.decisionRepo = decisionRepo;
         this.receivableRepo = receivableRepo;
         this.agreementRepo = agreementRepo;
         this.adjustmentRequestRepo = adjustmentRequestRepo;
+        this.closingServiceProvider = closingServiceProvider;
     }
 
     private boolean adjustmentRequestExists(String batchId) {
-        return adjustmentRequestRepo.findByOriginalBatchId(batchId).isPresent();
+        // 仅“进行中或已生效”的更正与撤销互斥；已驳回的更正不阻止重新撤销。
+        return adjustmentRequestRepo.findByOriginalBatchId(batchId)
+                .filter(r -> r.getStatus() == com.treasury.clearing.domain.AdjustmentStatus.REQUESTED
+                        || r.getStatus() == com.treasury.clearing.domain.AdjustmentStatus.PARTIALLY_APPROVED
+                        || r.getStatus() == com.treasury.clearing.domain.AdjustmentStatus.PROCESSED)
+                .isPresent();
     }
 
     /** 发起撤销申请：仅 CONFIRMED 的普通批次；按协议门槛快照一审/双审名额。 */
@@ -104,8 +112,8 @@ public class ReversalService {
         if (adjustmentRequestExists(batchId)) {
             throw new ConflictException("该批次存在差额更正申请，撤销与更正互斥: " + batchId);
         }
-        if (requestRepo.existsByOriginalBatchId(batchId)) {
-            throw new ConflictException("该批次已存在撤销申请，请勿重复提交: " + batchId);
+        if (requestRepo.findActiveByBatch(batchId).isPresent()) {
+            throw new ConflictException("该批次已存在进行中的撤销申请，请勿重复提交: " + batchId);
         }
 
         ThresholdSnapshot threshold = resolveThreshold(batch);
@@ -142,11 +150,19 @@ public class ReversalService {
             throw new IllegalArgumentException("审批结果（APPROVE/REJECT）不能为空");
         }
 
-        // 先锁申请行——所有并发决策在此串行，保证“最后名额”只被一个事务拿到。
-        ReversalRequest request = requestRepo.findByOriginalBatchIdForUpdate(batchId)
-                .orElseThrow(() -> new NoSuchElementException("批次 " + batchId + " 没有撤销申请"));
+        // 先锁原批次行串行化；再找该批次的撤销申请（可能有多条历史，终态决策必须返回 409）。
         ClearingBatch origin = batchRepo.findByIdForUpdate(batchId)
                 .orElseThrow(() -> new NoSuchElementException("原批次不存在: " + batchId));
+        List<ReversalRequest> all = requestRepo.findByOriginalBatchIdOrderByRequestedAtDescForUpdate(batchId);
+        if (all.isEmpty()) {
+            throw new NoSuchElementException("批次 " + batchId + " 没有撤销申请");
+        }
+        ReversalRequest request = all.get(0); // 最新一条（活动或终态）
+        if (all.stream().anyMatch(r -> r.getStatus() == ReversalStatus.REQUESTED
+                || r.getStatus() == ReversalStatus.PARTIALLY_APPROVED)) {
+            request = all.stream().filter(r -> r.getStatus() == ReversalStatus.REQUESTED
+                    || r.getStatus() == ReversalStatus.PARTIALLY_APPROVED).findFirst().orElse(request);
+        }
 
         // 终态短路：已冲正/已驳回后任何再决策都 409，绝不新增决议或改动债权。
         if (request.getStatus() == ReversalStatus.PROCESSED) {
@@ -218,6 +234,9 @@ public class ReversalService {
         }
 
         // 末审通过：决议 + 冲正批次 + 债权恢复 + 原批次终态，单事务原子完成。
+        // 已关账日期禁止撤销生效（冲正批次当日 confirmedAt=now）。
+        closingServiceProvider.getObject().assertDateNotClosed(now, "撤销冲正生效");
+
         String reversalBatchId = "RVL-" + UUID.randomUUID().toString().substring(0, 8);
         ClearingBatch reversalBatch = buildReversalBatch(reversalBatchId, origin, now, approver);
 

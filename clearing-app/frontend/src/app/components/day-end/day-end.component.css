@@ -1,0 +1,14 @@
+.day-end .date-row { margin: 10px 0; }
+.day-end label { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: 12px; max-width: 240px; }
+.close-row, .reopen-row { display: grid; gap: 8px; max-width: 420px; margin: 12px 0; }
+.report { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin: 12px 0; background: var(--panel); }
+.report-head h3 { margin: 0 0 4px; display: flex; gap: 8px; align-items: center; }
+.reopen-box { margin: 10px 0; padding: 10px; border: 1px dashed var(--line); border-radius: 8px; }
+table.decision-chain, table.lines, table.contribs { width: 100%; font-size: 12px; margin: 8px 0; }
+.detail h4 { margin: 12px 0 4px; }
+.link-btn { background: none; border: none; color: var(--accent); cursor: pointer; padding: 0; margin: 8px 0; }
+.rev-actions { display: flex; gap: 8px; margin-top: 8px; }
+.rev-banner { border-radius: 8px; padding: 10px 12px; margin: 8px 0; font-size: 13px; border: 1px solid var(--line); }
+.rev-banner.pending { background: #4a3a16; border-color: var(--amber); color: #fde68a; }
+.rev-banner.rejected { background: #4c2626; border-color: var(--red); color: #fecaca; }
+table.contribs tr.clickable { cursor: pointer; }

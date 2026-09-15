@@ -2,6 +2,10 @@
   <header class="topbar">
     <h1>集团内部债务清算试算平台</h1>
     <span class="muted small">按互抵协议与币种边界分组 · 排除质押/争议 · 不接入真实银行</span>
+    <nav class="tabs">
+      <button [class.active]="view()==='batches'" (click)="setView('batches')">清算批次</button>
+      <button [class.active]="view()==='dayend'" (click)="setView('dayend')">日终关账</button>
+    </nav>
   </header>
 
   <div class="error-banner" *ngIf="error()">
@@ -9,14 +13,25 @@
     <button class="secondary" (click)="error.set(null)">知道了</button>
   </div>
 
-  <ng-container *ngIf="!selected(); else detailTpl">
-    <div class="grid layout">
-      <div class="grid">
-        <app-trial-form [busy]="busy()" (create)="createTrial($event)"></app-trial-form>
-        <app-batch-list [batches]="batches()" (open)="openBatch($event)"></app-batch-list>
+  <ng-container *ngIf="view()==='batches'">
+    <ng-container *ngIf="!selected(); else detailTpl">
+      <div class="grid layout">
+        <div class="grid">
+          <app-trial-form [busy]="busy()" (create)="createTrial($event)"></app-trial-form>
+          <app-batch-list [batches]="batches()" (open)="openBatch($event)"></app-batch-list>
+        </div>
+        <app-fx-panel [rates]="rates()"></app-fx-panel>
       </div>
-      <app-fx-panel [rates]="rates()"></app-fx-panel>
-    </div>
+    </ng-container>
+  </ng-container>
+
+  <ng-container *ngIf="view()==='dayend' && !selected()">
+    <app-day-end [date]="closingDate()" [reports]="closingReports()" [busy]="busy()"
+      (dateChange)="onClosingDateChange($event)"
+      (close)="closeDay($event)"
+      (reopen)="requestReopen($event)"
+      (decision)="reopenDecision($event)"
+      (openBatch)="openBatch($event)"></app-day-end>
   </ng-container>
 
   <ng-template #detailTpl>

@@ -4,7 +4,7 @@ services:
     environment:
       POSTGRES_DB: clearing
       POSTGRES_USER: clearing
-      POSTGRES_PASSWORD: clearing
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD before starting Compose}
     ports:
       - "5432:5432"
     volumes:
@@ -23,7 +23,7 @@ services:
     environment:
       DB_URL: jdbc:postgresql://postgres:5432/clearing
       DB_USER: clearing
-      DB_PASSWORD: clearing
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD before starting Compose}
       # 演示环境额外打开 demo 播种？不需要——Flyway V2 已写入演示数据。
     ports:
       - "8080:8080"

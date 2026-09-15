@@ -21,6 +21,7 @@
 | 试算 vs 确认严格区分 | 试算 `SIMULATED` 不改原始债权；确认 `CONFIRMED` 仅把发票状态置 `CLEARED`，金额字段不动 |
 | 确认后可撤销冲正 | 见「撤销与冲正」：原方案完整保留，新增一条冲正批次恢复本次确认清偿的债权 |
 | 个别发票差额更正 | 见「确认方案差额更正」：不整单撤销，仅对个别更正发票重算净额差异并出差额批次 |
+| 日终关账/合规再开账 | 见「日终关账与再开账」：按结算日不可修改快照，关账日禁止确认/撤销/更正生效 |
 | 不接真实银行 | 无任何出金接口；确认只写台账状态与批次留痕 |
 
 被排除的债权**不删除、不改金额**，逐张写入 `excluded_claim` 并附原因，原始债务完整保留。
@@ -90,6 +91,32 @@ CONFIRMED ──发起撤销申请──▶ REVERSAL_PENDING ──决议凑满�
 
 ---
 
+## 1.7 日终关账与合规再开账
+
+按**结算日**对当日生效的 `NETTING / ADJUSTMENT / REVERSAL` 批次生成不可修改日终结算报表快照。
+
+- **快照内容**：按 (协议, 清算币种, 法人) 聚合的净头寸/毛应收应付/现金净收付/清偿张数汇总行，
+  以及逐批次、逐组的**贡献明细**（批次性质、组毛额、净额、现金、清偿张数），
+  可从每个汇总追溯到原始批次、指令、发票清偿、差额或冲正贡献；贡献净头寸合计为 0。
+- **唯一关账**：该日不存在 `REVERSAL_PENDING / ADJUSTMENT_PENDING` 批次时才允许；
+  报表日 + 版本唯一，且任意时刻最多一个有效（CLOSED/REOPEN_PENDING）快照（DB 部分唯一索引 + 行锁）。
+  重复关账、审批中批次关账、关账与确认/撤销末审/更正末审并发，只成功一次，其余 409，不改批次/债权/报表。
+- **关账日锁定**：已关账（或再开账审批中）日期禁止确认生效、撤销冲正生效、差额更正生效
+  （按 `confirmedAt` 的 UTC 日期判断，明确 409 提示先完成再开账）；首审等非生效动作不受影响。
+- **合规再开账**：必须发起不可修改 `reopen_request`，按当日各组现金清偿绝对额与协议
+  `dual_approval_threshold` 决定一审/双审，申请人不得审批、同一审批人唯一。
+  审批中旧快照转 `REOPEN_PENDING`（仍锁定）；**末审同事务**先把旧快照置 `SUPERSEDED` 并落库，
+  再生成版本 +1 的新 `CLOSED` 快照（带原因、申请人），旧快照与其贡献链永久保留、不覆盖。
+  驳回则旧快照回到 CLOSED，不产生新版本。再开账决议记录审批人/意见/时间/**关账前后状态**/新版本。
+- **失败恢复**：首审决议独立提交；之后服务失败或 `kill -9` 重启，重放同一审批人 409（不重复占名额），
+  第二审批人安全续审；末审“旧版本 SUPERSEDED + 新版本 + 决议”同生共死，重试不会重复生成快照或决议。
+- 历史已确认批次、冲正/差额双向关联、SIMULATED 估值时点、质押/争议/无协议债权 ACTIVE 均不变。
+
+前端新增“日终关账”页：选结算日关账、查看版本/汇总金额、展开完整批次贡献链（点击跳原批次），
+并提供再开账申请与四眼审批（门槛进度、决议链、关账前后状态）。
+
+---
+
 ## 2. 清算算法（`backend` · `NettingEngine`，全程 `BigDecimal` / `HALF_UP`）
 
 1. **分组**：`(互抵协议, 清算币种)`。同币种组清算币种=发票币种；跨币种组=协议结算币种。
@@ -146,6 +173,10 @@ clearing-app/
 | `POST /api/batches/{id}/adjustment-request` | 对未进入撤销流程的 CONFIRMED 批次，按一张/多张发票旧值→新值发起差额更正（按差额走四眼门槛） |
 | `POST /api/batches/{id}/adjustment/decision` | 提交一条差额更正四眼决议；凑满名额才在同事务生成唯一 ADJUSTMENT 差额批次 |
 | `GET /api/batches/{id}/adjustment` | 差额更正申请 + 发票更正事件（旧/新/差额）+ 决议链 |
+| `POST /api/closing/{date}/close` | 对结算日唯一关账（无审批中批次时），生成不可修改报表快照 |
+| `POST /api/closing/{date}/reopen-request` | 对已关账日发起合规再开账申请（四眼，按当日现金清偿额走门槛） |
+| `POST /api/closing/reopen/{requestId}/decision` | 提交再开账决议；末审生成版本+1 新快照，旧快照 SUPERSEDED |
+| `GET /api/closing/{date}` | 该日全部报表版本（汇总行 + 批次贡献链 + 再开账决议链） |
 | `GET /api/batches` / `GET /api/batches/{id}` | 批次列表 / 完整明细（组、头寸、指令、发票清偿、尾差、排除） |
 | `GET /api/receivables` | 原始债权只读视图 |
 | `GET|POST /api/fx-rates` | 资金部手工维护内部记账汇率（币种对、汇率、时点、来源） |
@@ -159,7 +190,7 @@ clearing-app/
 
 ```bash
 cd clearing-app
-docker compose up --build
+POSTGRES_PASSWORD=choose-a-local-password docker compose up --build
 # API: http://localhost:8080/api/batches
 ```
 
@@ -189,11 +220,12 @@ npm start          # http://localhost:4200，通过 proxy.conf.json 代理到 :8
 ### 4.4 测试与验收
 
 ```bash
-cd backend && mvn test                 # 24 个测试：引擎 + 服务集成 + 守恒 + 四眼撤销 + 差额更正
+cd backend && mvn test                 # 31 个测试：引擎 + 服务集成 + 守恒 + 撤销/更正四眼 + 关账/再开账
 bash scripts/acceptance.sh             # 黑盒：清算缩减/原债务保留
 bash scripts/acceptance-four-eyes.sh   # 黑盒：撤销四眼门槛/自审/重复/并发抢名额/唯一冲正/债权恢复
 bash scripts/acceptance-reversal.sh    # 黑盒：撤销一审通过后二审驳回的终态与决议链
 bash scripts/acceptance-adjustment.sh  # 黑盒：发票差额更正/双审/自审重复/并发/互斥/唯一差额批次
+bash scripts/acceptance-closing.sh     # 黑盒：唯一关账/审批中拦截/关账日锁定/四眼再开账/版本链
 ```
 
 ---

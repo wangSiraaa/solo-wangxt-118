@@ -1,0 +1,128 @@
+<div class="panel day-end">
+  <h2>日终关账与合规再开账</h2>
+
+  <div class="date-row">
+    <label>结算日
+      <input type="date" [ngModel]="date" (ngModelChange)="onDate($event)">
+    </label>
+  </div>
+
+  <div *ngIf="!reports.length" class="muted small">该结算日尚无关账报表。</div>
+
+  <!-- 关账入口：当日无有效关账 -->
+  <div *ngIf="reports.length === 0 && date" class="close-row">
+    <label>关账操作人<input [(ngModel)]="closedBy"></label>
+    <button class="danger" [disabled]="busy" (click)="submitClose()">对该结算日关账</button>
+    <p class="small muted">仅当该日不存在审批中的撤销/差额更正时允许；关账后该日禁止确认、撤销生效与差额更正生效。</p>
+  </div>
+
+  <div *ngFor="let r of reports" class="report">
+    <div class="report-head">
+      <h3>报表 v{{ r.reportVersion }}
+        <span class="badge" [class.cfm]="r.status==='CLOSED'"
+              [class.pending]="r.status==='REOPEN_PENDING'"
+              [class.reversed]="r.status==='SUPERSEDED'">
+          {{ {CLOSED:'有效关账', REOPEN_PENDING:'再开账审批中', SUPERSEDED:'已被新版本取代'}[r.status] }}
+        </span>
+      </h3>
+      <div class="muted small">
+        {{ r.id }} · {{ r.closedAt }} · {{ r.closedBy }} · 参与批次 {{ r.batchCount }}
+        · 现金合计 {{ fmt(r.totalCashAmount) }}
+        <span *ngIf="r.reopenReason"> · 再开账原因：{{ r.reopenReason }}（{{ r.createdByReopen }}）</span>
+      </div>
+    </div>
+
+    <!-- 再开账申请入口（仅有效 CLOSED 且无进行中申请） -->
+    <div *ngIf="r.status === 'CLOSED' && !activeReopen(r) && !hasAnyPending()" class="reopen-row">
+      <label>再开账原因<input [(ngModel)]="reopenReason"></label>
+      <label>申请人<input [(ngModel)]="reopenBy"></label>
+      <button class="secondary" [disabled]="busy" (click)="submitReopen()">发起合规再开账（四眼）</button>
+    </div>
+
+    <!-- 再开账审批 -->
+    <div *ngIf="activeReopen(r)" class="reopen-box">
+      <div class="rev-banner pending">
+        再开账审批中 · 已获 <b>{{ r.reopen?.approvalsReceived }}</b>/{{ r.reopen?.requiredApprovals }} 票
+        · 门槛 {{ r.reopen?.thresholdAgreement }} ≥ {{ r.reopen?.thresholdAmount }}
+        （当日现金 {{ r.reopen?.dayCashAmount }} {{ r.reopen?.dayCashCurrency }}）
+      </div>
+      <table class="decision-chain">
+        <thead><tr><th>#</th><th>决议</th><th>审批人</th><th>意见</th><th>时间</th><th>申请状态</th><th>关账状态</th></tr></thead>
+        <tbody>
+        <tr *ngFor="let d of r.reopen?.decisions">
+          <td>{{ d.seq }}</td>
+          <td><span class="badge" [class.payment]="d.outcome==='APPROVE'" [class.excluded]="d.outcome==='REJECT'">
+            {{ d.outcome === 'APPROVE' ? '通过' : '驳回' }}</span></td>
+          <td>{{ d.approver }}</td>
+          <td class="small">{{ d.comment }}</td>
+          <td class="small muted">{{ d.decidedAt }}</td>
+          <td class="small muted">{{ d.statusBefore }} → {{ d.statusAfter }}</td>
+          <td class="small muted">{{ d.closingStatusBefore }} → {{ d.closingStatusAfter }}</td>
+        </tr>
+        </tbody>
+      </table>
+      <label>审批人（不可与申请人 “{{ r.reopen?.requestedBy }}” 相同）
+        <input [(ngModel)]="approver" [placeholder]="(r.reopen?.approvalsReceived ?? 0) === 0 ? '复核人甲' : '复核人乙'">
+      </label>
+      <label>意见<input [(ngModel)]="comment"></label>
+      <div class="rev-actions">
+        <button [disabled]="busy"
+                (click)="submitDecision(r.reopen!.id, r.reopen!.approvalsReceived, r.reopen!.requiredApprovals, 'APPROVE')">
+          {{ (r.reopen?.approvalsReceived ?? 0) + 1 >= (r.reopen?.requiredApprovals ?? 1) ? '提交末审并生成新版本' : '提交通过决议' }}
+        </button>
+        <button class="secondary" [disabled]="busy"
+                (click)="submitDecision(r.reopen!.id, r.reopen!.approvalsReceived, r.reopen!.requiredApprovals, 'REJECT')">驳回</button>
+      </div>
+    </div>
+
+    <!-- 驳回留痕 -->
+    <div *ngIf="r.reopen?.status === 'REJECTED'" class="rev-banner rejected">
+      再开账被驳回（{{ r.reopen?.rejectedBy }} · {{ r.reopen?.rejectedAt }}）：{{ r.reopen?.rejectReason }}
+    </div>
+
+    <button class="link-btn" (click)="toggle(r.id)">
+      {{ expanded.has(r.id) ? '收起' : '展开' }} 汇总与批次贡献链
+    </button>
+
+    <div *ngIf="expanded.has(r.id)" class="detail">
+      <h4>汇总（协议 · 币种 · 法人）</h4>
+      <table class="lines">
+        <thead><tr><th>协议</th><th>币种</th><th>法人</th><th class="num">净头寸</th>
+          <th class="num">毛应收</th><th class="num">毛应付</th><th class="num">现金净收/付</th><th class="num">清偿张数</th></tr></thead>
+        <tbody>
+        <tr *ngFor="let l of r.lines">
+          <td>{{ l.agreementCode }}</td><td>{{ l.clearingCurrency }}</td><td>{{ l.entityCode }}</td>
+          <td class="num" [class.pos]="l.netPosition>0" [class.neg]="l.netPosition<0">{{ fmt(l.netPosition) }}</td>
+          <td class="num">{{ fmt(l.grossReceivable) }}</td>
+          <td class="num">{{ fmt(l.grossPayable) }}</td>
+          <td class="num" [class.pos]="l.cashAmount>0" [class.neg]="l.cashAmount<0">{{ fmt(l.cashAmount) }}</td>
+          <td class="num">{{ l.dischargeCount }}</td>
+        </tr>
+        </tbody>
+      </table>
+
+      <h4>批次贡献链（可追溯原始批次/指令/发票清偿）</h4>
+      <table class="contribs">
+        <thead><tr><th>批次</th><th>性质</th><th>协议</th><th>币种</th>
+          <th class="num">毛应收</th><th class="num">毛应付</th><th class="num">净头寸</th>
+          <th class="num">现金</th><th class="num">清偿张数</th></tr></thead>
+        <tbody>
+        <tr *ngFor="let c of r.contributions" class="clickable" (click)="openBatch.emit(c.batchId)">
+          <td><b>{{ c.batchId }}</b><div class="muted small">{{ c.batchLabel }}</div></td>
+          <td><span class="badge" [class.cfm]="c.contributionType==='NETTING'"
+                    [class.setoff]="c.contributionType==='REVERSAL'"
+                    [class.adj]="c.contributionType==='ADJUSTMENT'">
+            {{ {NETTING:'清算', REVERSAL:'冲正', ADJUSTMENT:'差额'}[c.contributionType] }}
+          </span></td>
+          <td>{{ c.agreementCode }}</td><td>{{ c.clearingCurrency }}</td>
+          <td class="num">{{ fmt(c.grossReceivable) }}</td>
+          <td class="num">{{ fmt(c.grossPayable) }}</td>
+          <td class="num" [class.pos]="c.netPosition>0" [class.neg]="c.netPosition<0">{{ fmt(c.netPosition) }}</td>
+          <td class="num">{{ fmt(c.cashAmount) }}</td>
+          <td class="num">{{ c.dischargeCount }}</td>
+        </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>

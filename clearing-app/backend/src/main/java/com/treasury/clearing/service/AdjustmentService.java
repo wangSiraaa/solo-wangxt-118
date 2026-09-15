@@ -66,6 +66,7 @@ public class AdjustmentService {
     private final InvoiceCorrectionEventRepository eventRepo;
     private final ReversalRequestRepository reversalRepo;
     private final AdjustmentEngine engine;
+    private final org.springframework.beans.factory.ObjectProvider<ClosingService> closingServiceProvider;
 
     public AdjustmentService(ClearingBatchRepository batchRepo,
                              ReceivableRepository receivableRepo,
@@ -75,7 +76,8 @@ public class AdjustmentService {
                              AdjustmentDecisionRepository decisionRepo,
                              InvoiceCorrectionEventRepository eventRepo,
                              ReversalRequestRepository reversalRepo,
-                             AdjustmentEngine engine) {
+                             AdjustmentEngine engine,
+                             org.springframework.beans.factory.ObjectProvider<ClosingService> closingServiceProvider) {
         this.batchRepo = batchRepo;
         this.receivableRepo = receivableRepo;
         this.agreementRepo = agreementRepo;
@@ -85,6 +87,7 @@ public class AdjustmentService {
         this.eventRepo = eventRepo;
         this.reversalRepo = reversalRepo;
         this.engine = engine;
+        this.closingServiceProvider = closingServiceProvider;
     }
 
     /** 单张发票更正请求。 */
@@ -116,8 +119,13 @@ public class AdjustmentService {
         if (origin.getAdjustmentBatchId() != null || requestRepo.existsByOriginalBatchId(originalBatchId)) {
             throw new ConflictException("该批次已发起过差额更正，不能重复更正");
         }
-        if (reversalRepo.findByOriginalBatchId(originalBatchId).isPresent()) {
-            throw new ConflictException("该批次存在撤销申请，撤销与更正互斥");
+        // 仅“进行中”的撤销与更正互斥；已驳回撤销不阻止发起更正。
+        boolean activeReversal = reversalRepo.findByOriginalBatchId(originalBatchId)
+                .filter(r -> r.getStatus() == com.treasury.clearing.domain.ReversalStatus.REQUESTED
+                        || r.getStatus() == com.treasury.clearing.domain.ReversalStatus.PARTIALLY_APPROVED)
+                .isPresent();
+        if (activeReversal) {
+            throw new ConflictException("该批次撤销申请进行中，撤销与更正互斥");
         }
         if (specs == null || specs.isEmpty()) {
             throw new IllegalArgumentException("至少包含一张发票更正");
@@ -320,6 +328,10 @@ public class AdjustmentService {
                     : ev.getOldAgreementCode();
             byGroup.computeIfAbsent(new GroupKey(agreement, ccy), k -> new ArrayList<>()).add(ev);
         }
+
+        // 末审：基于已落库的不可修改事件重算差额，幂等生成差额批次。
+        // 已关账日期禁止差额更正生效（差额批次当日 confirmedAt=now）。
+        closingServiceProvider.getObject().assertDateNotClosed(now, "差额更正生效");
 
         String adjustmentBatchId = "ADJ-" + UUID.randomUUID().toString().substring(0, 8);
         ClearingBatch adjBatch = ClearingBatch.adjustment(adjustmentBatchId,

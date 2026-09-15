@@ -103,7 +103,12 @@ public class BatchViewMapper {
                                 .toList()))
                 .toList();
 
-        ReversalView reversal = reversalRepo.findByOriginalBatchId(b.getId())
+        // 同一批次可能有多条历史撤销（驳回后可重新申请）；优先展示活动态，其次最新一条。
+        ReversalView reversal = reversalRepo.listByBatch(b.getId()).stream()
+                .max(Comparator.comparing((com.treasury.clearing.domain.ReversalRequest r) ->
+                        (r.getStatus() == com.treasury.clearing.domain.ReversalStatus.REQUESTED
+                                || r.getStatus() == com.treasury.clearing.domain.ReversalStatus.PARTIALLY_APPROVED) ? 1 : 0)
+                        .thenComparing(ReversalRequest::getRequestedAt))
                 .map(this::toReversalView).orElse(null);
         AdjustmentView adjustment = adjustmentRepo.findByOriginalBatchId(b.getId())
                 .map(this::toAdjustmentView).orElse(null);

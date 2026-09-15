@@ -225,3 +225,87 @@ export interface AdjustmentSpec {
   reason: string | null;
   effectiveScope: string | null;
 }
+
+export type ClosingStatus = 'CLOSED' | 'REOPEN_PENDING' | 'SUPERSEDED';
+
+export interface ClosingContributionView {
+  id: string;
+  batchId: string;
+  batchKind: string;
+  batchLabel: string | null;
+  agreementCode: string;
+  clearingCurrency: string;
+  grossReceivable: number;
+  grossPayable: number;
+  netPosition: number;
+  cashAmount: number;
+  dischargeCount: number;
+  contributionType: string;
+}
+
+export interface ClosingReportLineView {
+  id: string;
+  agreementCode: string;
+  clearingCurrency: string;
+  entityCode: string;
+  netPosition: number;
+  grossReceivable: number;
+  grossPayable: number;
+  cashAmount: number;
+  dischargeCount: number;
+}
+
+export interface ReopenDecisionView {
+  id: string;
+  seq: number;
+  outcome: DecisionOutcome;
+  approver: string;
+  comment: string | null;
+  decidedAt: string;
+  statusBefore: string;
+  statusAfter: string;
+  closingStatusBefore: string | null;
+  closingStatusAfter: string | null;
+  newReportId: string | null;
+}
+
+export interface ReopenView {
+  id: string;
+  settlementDate: string;
+  fromReportVersion: number;
+  newReportVersion: number | null;
+  newReportId: string | null;
+  status: string;
+  requiredApprovals: number;
+  approvalsReceived: number;
+  thresholdAgreement: string | null;
+  thresholdAmount: string | null;
+  dayCashAmount: string | null;
+  dayCashCurrency: string | null;
+  reason: string | null;
+  requestedBy: string | null;
+  requestedAt: string;
+  finalizedBy: string | null;
+  processedAt: string | null;
+  affectedBatchCount: number | null;
+  rejectedBy: string | null;
+  rejectedAt: string | null;
+  rejectReason: string | null;
+  decisions: ReopenDecisionView[];
+}
+
+export interface ClosingReportView {
+  id: string;
+  settlementDate: string;
+  reportVersion: number;
+  status: ClosingStatus;
+  closedBy: string | null;
+  closedAt: string;
+  reopenReason: string | null;
+  createdByReopen: string | null;
+  batchCount: number;
+  totalCashAmount: number;
+  lines: ClosingReportLineView[];
+  contributions: ClosingContributionView[];
+  reopen: ReopenView | null;
+}

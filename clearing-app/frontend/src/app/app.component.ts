@@ -1,21 +1,24 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { ClearingApi } from './api/clearing.api';
+import { ClosingApi } from './api/closing.api';
 import { FxPanelComponent } from './components/fx-panel/fx-panel.component';
 import { BatchDetailComponent } from './components/batch-detail/batch-detail.component';
 import { BatchListComponent } from './components/batch-list/batch-list.component';
+import { DayEndComponent } from './components/day-end/day-end.component';
 import { TrialFormComponent, TrialFormValue } from './components/trial-form/trial-form.component';
-import { BatchSummary, BatchView, FxRateView } from './models/models';
+import { BatchSummary, BatchView, ClosingReportView, FxRateView } from './models/models';
 
 @Component({
   selector: 'app-root',
   standalone: true,
   imports: [CommonModule, BatchListComponent, BatchDetailComponent, FxPanelComponent,
-    TrialFormComponent],
+    TrialFormComponent, DayEndComponent],
   templateUrl: './app.component.html'
 })
 export class AppComponent implements OnInit {
   private api = inject(ClearingApi);
+  private closingApi = inject(ClosingApi);
 
   batches = signal<BatchSummary[]>([]);
   rates = signal<FxRateView[]>([]);
@@ -23,8 +26,55 @@ export class AppComponent implements OnInit {
   busy = signal(false);
   error = signal<string | null>(null);
 
+  view = signal<'batches' | 'dayend'>('batches');
+  closingDate = signal<string>(new Date().toISOString().slice(0, 10));
+  closingReports = signal<ClosingReportView[]>([]);
+
   ngOnInit(): void {
     this.refresh();
+  }
+
+  setView(v: 'batches' | 'dayend'): void {
+    this.view.set(v);
+    if (v === 'dayend') {
+      this.loadClosing();
+    }
+  }
+
+  loadClosing(): void {
+    this.closingApi.list(this.closingDate()).subscribe(r => this.closingReports.set(r));
+  }
+
+  onClosingDateChange(date: string): void {
+    this.closingDate.set(date);
+    this.loadClosing();
+  }
+
+  closeDay(payload: { date: string; by: string }): void {
+    this.busy.set(true);
+    this.error.set(null);
+    this.closingApi.close(payload.date, payload.by).subscribe({
+      next: () => { this.busy.set(false); this.loadClosing(); },
+      error: e => this.fail(e, '关账失败')
+    });
+  }
+
+  requestReopen(payload: { date: string; reason: string; by: string }): void {
+    this.busy.set(true);
+    this.error.set(null);
+    this.closingApi.requestReopen(payload.date, payload.reason, payload.by).subscribe({
+      next: () => { this.busy.set(false); this.loadClosing(); },
+      error: e => this.fail(e, '再开账申请失败')
+    });
+  }
+
+  reopenDecision(payload: { requestId: string; approver: string; comment: string; outcome: 'APPROVE' | 'REJECT' }): void {
+    this.busy.set(true);
+    this.error.set(null);
+    this.closingApi.decide(payload.requestId, payload.approver, payload.comment, payload.outcome).subscribe({
+      next: () => { this.busy.set(false); this.loadClosing(); },
+      error: e => this.fail(e, payload.outcome === 'APPROVE' ? '再开账审批失败' : '再开账驳回失败')
+    });
   }
 
   refresh(): void {
@@ -47,6 +97,7 @@ export class AppComponent implements OnInit {
   }
 
   openBatch(id: string): void {
+    this.view.set('batches');
     this.api.getBatch(id).subscribe(b => this.selected.set(b));
   }
 
