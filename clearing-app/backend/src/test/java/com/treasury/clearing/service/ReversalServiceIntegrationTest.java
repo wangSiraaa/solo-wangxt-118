@@ -55,8 +55,11 @@ class ReversalServiceIntegrationTest {
 
     private LocalDate d;
 
+    @Autowired private IntegrationTestCleaner cleaner;
+
     @BeforeEach
     void setUp() {
+        cleaner.cleanAll();
         excludedRepo.deleteAll();
         eventRepo.deleteAll();
         adjDecRepo.deleteAll();

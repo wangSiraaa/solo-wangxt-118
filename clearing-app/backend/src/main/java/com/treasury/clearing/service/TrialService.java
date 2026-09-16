@@ -63,7 +63,8 @@ public class TrialService {
     private final ClearingBatchRepository batchRepo;
     private final ExcludedClaimRepository excludedRepo;
     private final NettingEngine engine;
-    private final org.springframework.beans.factory.ObjectProvider<ClosingService> closingServiceProvider;
+    private final DayLockService dayLock;
+    private final ClosingService closingService;
 
     public TrialService(ReceivableRepository receivableRepo,
                         NettingAgreementRepository agreementRepo,
@@ -72,7 +73,8 @@ public class TrialService {
                         ClearingBatchRepository batchRepo,
                         ExcludedClaimRepository excludedRepo,
                         NettingEngine engine,
-                        org.springframework.beans.factory.ObjectProvider<ClosingService> closingServiceProvider) {
+                        DayLockService dayLock,
+                        ClosingService closingService) {
         this.receivableRepo = receivableRepo;
         this.agreementRepo = agreementRepo;
         this.partyRepo = partyRepo;
@@ -80,7 +82,8 @@ public class TrialService {
         this.batchRepo = batchRepo;
         this.excludedRepo = excludedRepo;
         this.engine = engine;
-        this.closingServiceProvider = closingServiceProvider;
+        this.dayLock = dayLock;
+        this.closingService = closingService;
     }
 
     @Transactional
@@ -88,6 +91,16 @@ public class TrialService {
                                   boolean confirm) {
         Instant now = Instant.now();
         Instant valuation = valuationTime != null ? valuationTime : now;
+        // 确认生效时刻在事务入口即确定；先取该结算日统一互斥锁（在任何写入之前），
+        // 与关账严格串行：持锁后关账必等到确认提交，快照必含本批次；反之关账先持锁则此处 409。
+        Instant effectiveAt = confirm ? now : null;
+        if (confirm) {
+            dayLock.acquire(ClosingService.dateOf(effectiveAt));
+            if (closingService.isDateClosed(effectiveAt)) {
+                throw new ConflictException("结算日 " + ClosingService.dateOf(effectiveAt)
+                        + " 已关账（或再开账审批中），禁止确认清算方案，请先完成再开账审批");
+            }
+        }
 
         List<Receivable> all = receivableRepo.findAllByOrderByInvoiceDateAsc();
         Map<String, NettingAgreement> agreements = agreementRepo.findAll().stream()
@@ -193,11 +206,13 @@ public class TrialService {
                 }
                 r.markCleared();
             }
-            Instant confirmedAt = Instant.now();
-            // 已关账日期禁止继续确认
-            closingServiceProvider.getObject().assertDateNotClosed(confirmedAt, "确认清算方案");
+            // 日锁已在事务入口取得；提交前再复查一次关账状态（持锁期间不会有新关账，双保险）。
+            if (closingService.isDateClosed(effectiveAt)) {
+                throw new ConflictException("结算日 " + ClosingService.dateOf(effectiveAt)
+                        + " 已关账，确认回滚，请先完成再开账审批");
+            }
             receivableRepo.saveAll(locked);
-            saved.confirm(confirmedAt);
+            saved.confirm(effectiveAt);
         }
         return saved;
     }

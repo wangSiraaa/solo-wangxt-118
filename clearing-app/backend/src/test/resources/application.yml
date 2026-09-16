@@ -10,3 +10,4 @@ spring:
     open-in-view: false
   flyway:
     enabled: false
+spring.jpa.properties.jakarta.persistence.lock.timeout: 2000

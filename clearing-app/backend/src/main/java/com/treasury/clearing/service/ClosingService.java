@@ -61,17 +61,20 @@ public class ClosingService {
     private final NettingAgreementRepository agreementRepo;
     private final ReopenRequestRepository reopenRepo;
     private final ReopenDecisionRepository reopenDecisionRepo;
+    private final DayLockService dayLock;
 
     public ClosingService(ClosingReportRepository reportRepo,
                           ClosingBatchQueryRepository batchQueryRepo,
                           NettingAgreementRepository agreementRepo,
                           ReopenRequestRepository reopenRepo,
-                          ReopenDecisionRepository reopenDecisionRepo) {
+                          ReopenDecisionRepository reopenDecisionRepo,
+                          DayLockService dayLock) {
         this.reportRepo = reportRepo;
         this.batchQueryRepo = batchQueryRepo;
         this.agreementRepo = agreementRepo;
         this.reopenRepo = reopenRepo;
         this.reopenDecisionRepo = reopenDecisionRepo;
+        this.dayLock = dayLock;
     }
 
     private static Instant dayStart(LocalDate d) {
@@ -106,7 +109,9 @@ public class ClosingService {
     @Transactional
     public ClosingReport close(LocalDate date, String by) {
         Instant now = Instant.now();
-        // 锁该日全部报表行，串行化并发关账/再开账
+        // 统一日互斥边界：与“确认生效/撤销/更正末审”在此串行，恰好一方成功。
+        dayLock.acquire(date);
+        // 持锁后再锁该日报表行，串行化并发关账/再开账
         List<ClosingReport> existing = reportRepo.findByDateForUpdate(date);
         boolean activeExists = existing.stream().anyMatch(r ->
                 r.getStatus() == ClosingStatus.CLOSED || r.getStatus() == ClosingStatus.REOPEN_PENDING);
@@ -238,6 +243,7 @@ public class ClosingService {
     @Transactional
     public ReopenRequest requestReopen(LocalDate date, String reason, String by) {
         Instant now = Instant.now();
+        dayLock.acquire(date); // 与确认/关账/末审串行
         List<ClosingReport> reports = reportRepo.findByDateForUpdate(date);
         ClosingReport current = reports.stream()
                 .filter(r -> r.getStatus() == ClosingStatus.CLOSED)
@@ -278,9 +284,14 @@ public class ClosingService {
             throw new IllegalArgumentException("审批结果不能为空");
         }
 
+        // 先读申请定位结算日（不加锁），随后在该日统一互斥边界内完成决议/快照切换
+        ReopenRequest ref = reopenRepo.findById(requestId)
+                .orElseThrow(() -> new NoSuchElementException("再开账申请不存在: " + requestId));
+        LocalDate date = ref.getSettlementDate();
+        dayLock.acquire(date); // 与关账/确认/撤销更正末审串行
+
         ReopenRequest req = reopenRepo.findByIdForUpdate(requestId)
                 .orElseThrow(() -> new NoSuchElementException("再开账申请不存在: " + requestId));
-        LocalDate date = req.getSettlementDate();
         List<ClosingReport> reports = reportRepo.findByDateForUpdate(date);
         ClosingReport current = reports.stream()
                 .filter(r -> r.getStatus() == ClosingStatus.REOPEN_PENDING

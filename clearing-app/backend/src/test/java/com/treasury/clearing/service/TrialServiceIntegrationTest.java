@@ -46,8 +46,11 @@ class TrialServiceIntegrationTest {
     @Autowired private TrialService trialService;
     @Autowired private NettingEngine engine;
 
+    @Autowired private IntegrationTestCleaner cleaner;
+
     @BeforeEach
     void setUp() {
+        cleaner.cleanAll();
         excludedRepo.deleteAll();
         corrEventRepo.deleteAll();
         adjDecisionRepo.deleteAll();

@@ -68,8 +68,11 @@ class ClosingServiceIntegrationTest {
 
     private LocalDate settlementDate;
 
+    @Autowired private IntegrationTestCleaner cleaner;
+
     @BeforeEach
     void setUp() {
+        cleaner.cleanAll();
         excludedRepo.deleteAll();
         corrEventRepo.deleteAll();
         adjDecisionRepo.deleteAll();

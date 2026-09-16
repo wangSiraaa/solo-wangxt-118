@@ -46,8 +46,11 @@ class BalanceConservationIntegrationTest {
     @Autowired private com.treasury.clearing.repo.AdjustmentDecisionRepository adjDecisionRepo;
     @Autowired private com.treasury.clearing.repo.AdjustmentRequestRepository adjRequestRepo;
 
+    @Autowired private IntegrationTestCleaner cleaner;
+
     @BeforeEach
     void seed() {
+        cleaner.cleanAll();
         excludedRepo.deleteAll();
         corrEventRepo.deleteAll();
         adjDecisionRepo.deleteAll();

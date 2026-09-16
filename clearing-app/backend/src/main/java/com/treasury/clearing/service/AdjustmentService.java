@@ -66,7 +66,8 @@ public class AdjustmentService {
     private final InvoiceCorrectionEventRepository eventRepo;
     private final ReversalRequestRepository reversalRepo;
     private final AdjustmentEngine engine;
-    private final org.springframework.beans.factory.ObjectProvider<ClosingService> closingServiceProvider;
+    private final DayLockService dayLock;
+    private final ClosingService closingService;
 
     public AdjustmentService(ClearingBatchRepository batchRepo,
                              ReceivableRepository receivableRepo,
@@ -77,7 +78,8 @@ public class AdjustmentService {
                              InvoiceCorrectionEventRepository eventRepo,
                              ReversalRequestRepository reversalRepo,
                              AdjustmentEngine engine,
-                             org.springframework.beans.factory.ObjectProvider<ClosingService> closingServiceProvider) {
+                             DayLockService dayLock,
+                             ClosingService closingService) {
         this.batchRepo = batchRepo;
         this.receivableRepo = receivableRepo;
         this.agreementRepo = agreementRepo;
@@ -87,7 +89,8 @@ public class AdjustmentService {
         this.eventRepo = eventRepo;
         this.reversalRepo = reversalRepo;
         this.engine = engine;
-        this.closingServiceProvider = closingServiceProvider;
+        this.dayLock = dayLock;
+        this.closingService = closingService;
     }
 
     /** 单张发票更正请求。 */
@@ -319,6 +322,14 @@ public class AdjustmentService {
             return request;
         }
 
+        // 末审将生效（差额批次当日 confirmedAt=now）：在写差额批次前取结算日统一锁，
+        // 与关账串行，杜绝“关账漏掉差额批次”或“关账后差额更正生效”。
+        dayLock.acquire(ClosingService.dateOf(now));
+        if (closingService.isDateClosed(now)) {
+            throw new ConflictException("结算日 " + ClosingService.dateOf(now)
+                    + " 已关账（或再开账审批中），禁止差额更正生效，请先完成再开账审批");
+        }
+
         // 末审：基于已落库的不可修改事件重算差额，幂等生成差额批次
         List<InvoiceCorrectionEvent> events = eventRepo.listByRequest(request.getId());
         Map<GroupKey, List<InvoiceCorrectionEvent>> byGroup = new LinkedHashMap<>();
@@ -328,10 +339,6 @@ public class AdjustmentService {
                     : ev.getOldAgreementCode();
             byGroup.computeIfAbsent(new GroupKey(agreement, ccy), k -> new ArrayList<>()).add(ev);
         }
-
-        // 末审：基于已落库的不可修改事件重算差额，幂等生成差额批次。
-        // 已关账日期禁止差额更正生效（差额批次当日 confirmedAt=now）。
-        closingServiceProvider.getObject().assertDateNotClosed(now, "差额更正生效");
 
         String adjustmentBatchId = "ADJ-" + UUID.randomUUID().toString().substring(0, 8);
         ClearingBatch adjBatch = ClearingBatch.adjustment(adjustmentBatchId,

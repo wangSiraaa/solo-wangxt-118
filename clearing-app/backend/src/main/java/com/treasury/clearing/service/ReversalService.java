@@ -62,7 +62,8 @@ public class ReversalService {
     private final ReceivableRepository receivableRepo;
     private final NettingAgreementRepository agreementRepo;
     private final AdjustmentRequestRepository adjustmentRequestRepo;
-    private final org.springframework.beans.factory.ObjectProvider<ClosingService> closingServiceProvider;
+    private final DayLockService dayLock;
+    private final ClosingService closingService;
 
     public ReversalService(ClearingBatchRepository batchRepo,
                            ReversalRequestRepository requestRepo,
@@ -70,14 +71,16 @@ public class ReversalService {
                            ReceivableRepository receivableRepo,
                            NettingAgreementRepository agreementRepo,
                            AdjustmentRequestRepository adjustmentRequestRepo,
-                           org.springframework.beans.factory.ObjectProvider<ClosingService> closingServiceProvider) {
+                           DayLockService dayLock,
+                           ClosingService closingService) {
         this.batchRepo = batchRepo;
         this.requestRepo = requestRepo;
         this.decisionRepo = decisionRepo;
         this.receivableRepo = receivableRepo;
         this.agreementRepo = agreementRepo;
         this.adjustmentRequestRepo = adjustmentRequestRepo;
-        this.closingServiceProvider = closingServiceProvider;
+        this.dayLock = dayLock;
+        this.closingService = closingService;
     }
 
     private boolean adjustmentRequestExists(String batchId) {
@@ -233,10 +236,16 @@ public class ReversalService {
             return request;
         }
 
-        // 末审通过：决议 + 冲正批次 + 债权恢复 + 原批次终态，单事务原子完成。
-        // 已关账日期禁止撤销生效（冲正批次当日 confirmedAt=now）。
-        closingServiceProvider.getObject().assertDateNotClosed(now, "撤销冲正生效");
+        // 末审将生效（冲正批次当日 confirmedAt=now）：在改债权/批次前取结算日统一锁，
+        // 与关账串行，杜绝“关账漏掉冲正批次”或“关账后冲正生效”。
+        dayLock.acquire(ClosingService.dateOf(now));
+        // 日锁只串行化并发；已提交的关账仍需状态判定（锁在对方提交后已释放）。
+        if (closingService.isDateClosed(now)) {
+            throw new ConflictException("结算日 " + ClosingService.dateOf(now)
+                    + " 已关账（或再开账审批中），禁止撤销冲正生效，请先完成再开账审批");
+        }
 
+        // 末审通过：决议 + 冲正批次 + 债权恢复 + 原批次终态，单事务原子完成。
         String reversalBatchId = "RVL-" + UUID.randomUUID().toString().substring(0, 8);
         ClearingBatch reversalBatch = buildReversalBatch(reversalBatchId, origin, now, approver);
 
