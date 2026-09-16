@@ -12,6 +12,7 @@ import com.treasury.clearing.repo.ReopenDecisionRepository;
 import com.treasury.clearing.repo.ReopenRequestRepository;
 import com.treasury.clearing.repo.ReversalDecisionRepository;
 import com.treasury.clearing.repo.ReversalRequestRepository;
+import com.treasury.clearing.repo.SettlementDayGateRepository;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,6 +36,7 @@ public class IntegrationTestCleaner {
     private final ClosingReportLineRepository lineRepo;
     private final ClosingReportRepository reportRepo;
     private final DayLockRepository dayLockRepo;
+    private final SettlementDayGateRepository dayGateRepo;
 
     public IntegrationTestCleaner(ExcludedClaimRepository excludedRepo,
                                   ReversalDecisionRepository reversalDecisionRepo,
@@ -47,7 +49,8 @@ public class IntegrationTestCleaner {
                                   ClosingContributionRepository contributionRepo,
                                   ClosingReportLineRepository lineRepo,
                                   ClosingReportRepository reportRepo,
-                                  DayLockRepository dayLockRepo) {
+                                  DayLockRepository dayLockRepo,
+                                  SettlementDayGateRepository dayGateRepo) {
         this.excludedRepo = excludedRepo;
         this.reversalDecisionRepo = reversalDecisionRepo;
         this.reversalRepo = reversalRepo;
@@ -60,6 +63,7 @@ public class IntegrationTestCleaner {
         this.lineRepo = lineRepo;
         this.reportRepo = reportRepo;
         this.dayLockRepo = dayLockRepo;
+        this.dayGateRepo = dayGateRepo;
     }
 
     /**
@@ -80,6 +84,7 @@ public class IntegrationTestCleaner {
         contributionRepo.deleteAllInBatch();
         lineRepo.deleteAllInBatch();
         reportRepo.deleteAllInBatch();
+        dayGateRepo.deleteAllInBatch();
         dayLockRepo.deleteAllInBatch();
     }
 }

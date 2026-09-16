@@ -25,13 +25,29 @@ public class DayLockService {
     }
 
     /**
-     * 在当前事务内取该结算日排他锁并持有到提交。
-     * 先在独立事务确保锁行存在（避免首次关账与首次确认互插），再 FOR UPDATE。
-     * 锁等待超时统一转 409；调用方须已在事务中。
+     * 确保锁行存在（首次并发竞争时显式重试），再在当前事务 FOR UPDATE。
+     * 首次插入的唯一冲突发生在独立 REQUIRES_NEW 事务中、自行回滚，不污染调用方事务。
      */
     @Transactional
     public void acquire(LocalDate date) {
-        bootstrap.ensureExists(date);
+        try {
+            bootstrap.tryInsert(date);
+        } catch (RuntimeException concurrentInsert) {
+            // 另一方已在并发首次创建：确认可见；若尚未提交可见则稍候重试
+            for (int i = 0; i < 10 && !bootstrap.exists(date); i++) {
+                sleep(20);
+            }
+            if (!bootstrap.exists(date)) {
+                // 对方可能回滚未提交，再尝试一次插入
+                try {
+                    bootstrap.tryInsert(date);
+                } catch (RuntimeException again) {
+                    if (!bootstrap.exists(date)) {
+                        throw new ConflictException("结算日锁初始化失败，请重试: " + date);
+                    }
+                }
+            }
+        }
         try {
             SettlementDayLock lock = repo.findLockedByDate(date)
                     .orElseThrow(() -> new ConflictException("结算日锁不可用: " + date));
@@ -40,6 +56,14 @@ public class DayLockService {
             }
         } catch (LockTimeoutException e) {
             throw new ConflictException("结算日 " + date + " 正有关账/确认操作进行中，请重试");
+        }
+    }
+
+    private static void sleep(long ms) {
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
     }
 }

@@ -65,6 +65,8 @@ public class TrialService {
     private final NettingEngine engine;
     private final DayLockService dayLock;
     private final ClosingService closingService;
+    private final DayGateCoordinator dayGate;
+    private final ConcurrencyHooks hooks;
 
     public TrialService(ReceivableRepository receivableRepo,
                         NettingAgreementRepository agreementRepo,
@@ -74,7 +76,9 @@ public class TrialService {
                         ExcludedClaimRepository excludedRepo,
                         NettingEngine engine,
                         DayLockService dayLock,
-                        ClosingService closingService) {
+                        ClosingService closingService,
+                        DayGateCoordinator dayGate,
+                        ConcurrencyHooks hooks) {
         this.receivableRepo = receivableRepo;
         this.agreementRepo = agreementRepo;
         this.partyRepo = partyRepo;
@@ -84,6 +88,8 @@ public class TrialService {
         this.engine = engine;
         this.dayLock = dayLock;
         this.closingService = closingService;
+        this.dayGate = dayGate;
+        this.hooks = hooks;
     }
 
     @Transactional
@@ -95,9 +101,15 @@ public class TrialService {
         // 与关账严格串行：持锁后关账必等到确认提交，快照必含本批次；反之关账先持锁则此处 409。
         Instant effectiveAt = confirm ? now : null;
         if (confirm) {
-            dayLock.acquire(ClosingService.dateOf(effectiveAt));
+            LocalDate settleDate = ClosingService.dateOf(effectiveAt);
+            hooks.confirmBeforeLock();
+            dayLock.acquire(settleDate);
+            hooks.confirmAfterLock();
+            // 持同一日锁：若关账已登记 PENDING 门（在队列前），确认取代它（确认胜）；
+            // 若关账已完成（CLOSED/REOPEN_PENDING 报表），确认 409。
+            dayGate.supersedePendingForConfirm(settleDate);
             if (closingService.isDateClosed(effectiveAt)) {
-                throw new ConflictException("结算日 " + ClosingService.dateOf(effectiveAt)
+                throw new ConflictException("结算日 " + settleDate
                         + " 已关账（或再开账审批中），禁止确认清算方案，请先完成再开账审批");
             }
         }

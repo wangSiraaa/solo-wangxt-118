@@ -62,19 +62,25 @@ public class ClosingService {
     private final ReopenRequestRepository reopenRepo;
     private final ReopenDecisionRepository reopenDecisionRepo;
     private final DayLockService dayLock;
+    private final DayGateCoordinator dayGate;
+    private final ConcurrencyHooks hooks;
 
     public ClosingService(ClosingReportRepository reportRepo,
                           ClosingBatchQueryRepository batchQueryRepo,
                           NettingAgreementRepository agreementRepo,
                           ReopenRequestRepository reopenRepo,
                           ReopenDecisionRepository reopenDecisionRepo,
-                          DayLockService dayLock) {
+                          DayLockService dayLock,
+                          DayGateCoordinator dayGate,
+                          ConcurrencyHooks hooks) {
         this.reportRepo = reportRepo;
         this.batchQueryRepo = batchQueryRepo;
         this.agreementRepo = agreementRepo;
         this.reopenRepo = reopenRepo;
         this.reopenDecisionRepo = reopenDecisionRepo;
         this.dayLock = dayLock;
+        this.dayGate = dayGate;
+        this.hooks = hooks;
     }
 
     private static Instant dayStart(LocalDate d) {
@@ -109,17 +115,37 @@ public class ClosingService {
     @Transactional
     public ClosingReport close(LocalDate date, String by) {
         Instant now = Instant.now();
-        // 统一日互斥边界：与“确认生效/撤销/更正末审”在此串行，恰好一方成功。
-        dayLock.acquire(date);
-        // 持锁后再锁该日报表行，串行化并发关账/再开账
-        List<ClosingReport> existing = reportRepo.findByDateForUpdate(date);
-        boolean activeExists = existing.stream().anyMatch(r ->
-                r.getStatus() == ClosingStatus.CLOSED || r.getStatus() == ClosingStatus.REOPEN_PENDING);
-        if (activeExists) {
-            throw new ConflictException("结算日 " + date + " 已存在有效关账，不能重复关账");
+        hooks.closeBeforeIntent(date);
+        // 1) 独立短事务持有日行锁登记 PENDING 门（与确认取同一把锁），重复关账在此 409。
+        com.treasury.clearing.domain.SettlementDayGate gate = dayGate.registerCloseIntent(date);
+        hooks.closeAfterIntent(date);
+        try {
+            // 2) 主事务取日行锁：与确认严格串行。
+            hooks.closeBeforeLock();
+            dayLock.acquire(date);
+            // 3) 持锁判定竞争结果：确认先拿锁会把 PENDING 置 SUPERSEDED。
+            gate = dayGate.claim(date, gate.getId());
+            // 4) 持锁检查有效报表（关账胜出后的重复关账）。
+            List<ClosingReport> existing = reportRepo.findByDateForUpdate(date);
+            boolean activeExists = existing.stream().anyMatch(r ->
+                    r.getStatus() == ClosingStatus.CLOSED || r.getStatus() == ClosingStatus.REOPEN_PENDING);
+            if (activeExists) {
+                dayGate.cancelPending(gate.getId());
+                throw new ConflictException("结算日 " + date + " 已存在有效关账，不能重复关账");
+            }
+            // 5) 建快照并置门 CLOSED，同一日锁临界区内完成（关账胜出）。
+            ClosingReport report = buildAndSaveSnapshot(date, 1, null, by, now,
+                    "CLR-" + UUID.randomUUID().toString().substring(0, 8), null, null);
+            dayGate.completeClose(gate);
+            return report;
+        } catch (RuntimeException failure) {
+            try {
+                dayGate.cancelPending(gate.getId());
+            } catch (RuntimeException ignored) {
+                // best effort
+            }
+            throw failure;
         }
-        return buildAndSaveSnapshot(date, 1, null, by, now, "CLR-" + UUID.randomUUID().toString().substring(0, 8),
-                null, null);
     }
 
     /** 汇总并落一条快照（关账首发或再开账新版本共用）。调用方须已持报表行锁。 */
